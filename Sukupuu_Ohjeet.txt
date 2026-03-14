@@ -1,0 +1,32 @@
+SUKUPUU - KÄYTTÖOHJE (Verkkoversio)
+===================================
+
+Sukupuu-sovellus toimii nyt suoraan selaimessa ilman erillistä taustapalvelinta. Se on suunniteltu jaettavaksi suvun kesken esimerkiksi GitHub Pages -palvelun kautta ja se hakee tiedot automaattisesti OneDrivesta.
+
+1. SOVELLUKSEN KÄYTTÖ JA ONEDRIVE-LINKKI
+ - Sovellus ladataan suoraan selaimella (esim. GitHub Pages -osoitteesta).
+ - Jotta sukupuu latautuu automaattisesti OneDrivesta, sinun täytyy määrittää jakolinkki `app.js` -tiedostoon:
+   1. Jaa XML-tiedosto OneDrivessa valitsemalla "Kuka tahansa linkin saanut voi tarkastella".
+   2. Kopioi linkki ja liitä se `app.js` -tiedoston alkuun kohtaan `ONEDRIVE_SHARE_URL = 'tähän_linkki';`.
+ - Kun sivu ladataan, se hakee aina uusimman version OneDrivesta.
+
+2. MUUTOSTEN TEKEMINEN (TALLENNA)
+ - Kun olet muokannut, lisännyt tai poistanut henkilöitä, klikkaa "Tallenna".
+ - HUOM: Koska selain ei voi tallentaa suoraan takaisin OneDriveen, klikkaamalla "Tallenna" muutoksesi tallentuvat väliaikaisesti selaimesi muistiin (Luonnos).
+ - Jos suljet selaimen vahingossa, luonnoksesi on turvassa. Seuraavan kerran avatessasi sovellus kysyy, haluatko jatkaa luonnoksesta vai ladata uusimman version päätietokannasta (OneDrive).
+
+3. MUUTOSTEN VIEMINEN PÄÄTIETOKANTAAN (VIE KOPIO)
+ - Kun olet valmis jakamaan muutoksesi muille, klikkaa "Vie kopio".
+ - Tämä lataa päivitetyn `.xml` -tiedoston tietokoneellesi.
+ - Lataamisen jälkeen selaimesi muistiin tallennettu luonnos poistetaan automaattisesti.
+ - TÄRKEÄÄ: Siirrä/kopioi juuri lataamasi tiedosto takaisin OneDrive-kansioosi ja korvaa siellä oleva vanha versio. Näin muut sukulaiset näkevät tekemäsi muutokset!
+
+4. PAIKALLISEN TIEDOSTON AVAAMINEN (AVAA)
+ - Voit halutessasi tutkia jotain muuta XML-tiedostoa klikkaamalla "Avaa".
+ - Tällöin valitset tietokoneeltasi haluamasi tiedoston ja se ladataan selaimeen (se ei siirry nettiin minnekään).
+
+5. KÄYTTÖVINKKEJÄ
+ - Voit zoomata sukupuuta hiiren rullalla tai oikean alakulman napeilla.
+ - Vaihda "Normaali" ja "Tiivis" näkymien välillä yläpalkista (Tiivis-näkymä on hyödyllinen, jos lapsia on paljon).
+ - Etsi henkilöitä vasemman reunan hakukentällä (voit etsiä koko nimellä tai "Muut nimet" -kentän tiedoilla).
+ - Saat henkilön tiedot esiin klikkaamalla häntä puusta tai listasta.
