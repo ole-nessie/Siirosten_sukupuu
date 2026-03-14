@@ -39,7 +39,7 @@
     // OneDrive sharing URL for the XML data file.
     // To set up: share the XML file on OneDrive → "Anyone with the link can view"
     // Then paste the sharing URL here (e.g., https://1drv.ms/u/s!AbcDef...)
-    const ONEDRIVE_SHARE_URL = 'https://1drv.ms/u/c/cc9a901ed0118a0d/IQB-Sqg25_1aSqOQR-WLmz7MAds3stJYvqC7Xhb3eYtSfT4?e=qRjuXa'; // ← Paste your OneDrive sharing link here
+    const ONEDRIVE_SHARE_URL = 'https://1drv.ms/u/c/cc9a901ed0118a0d/IQB-Sqg25_1aSqOQR-WLmz7MAds3stJYvqC7Xhb3eYtSfT4?e=fT0V6i'; // ← Paste your OneDrive sharing link here
 
     // ── Init ──
     // Convert a OneDrive sharing URL to a direct download API URL
