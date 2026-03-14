@@ -996,7 +996,7 @@
         let initialPinchDistance = null;
         let initialScale = 1;
 
-        treeContainer.addEventListener('touchstart', e => {
+        treeArea.addEventListener('touchstart', e => {
             if (e.target.closest('.tree-node')) return;
             
             if (e.touches.length === 1) {
@@ -1012,7 +1012,7 @@
             }
         }, { passive: false });
 
-        window.addEventListener('touchmove', e => {
+        treeArea.addEventListener('touchmove', e => {
             if (isPanning && e.touches.length === 1) {
                 e.preventDefault(); // Prevent scrolling
                 panX = e.touches[0].clientX - panStartX;
@@ -1040,7 +1040,7 @@
             }
         }, { passive: false });
 
-        window.addEventListener('touchend', e => {
+        treeArea.addEventListener('touchend', e => {
             if (e.touches.length < 2) {
                 initialPinchDistance = null;
             }
@@ -1054,7 +1054,7 @@
             }
         });
         
-        window.addEventListener('touchcancel', () => {
+        treeArea.addEventListener('touchcancel', () => {
              isPanning = false;
              initialPinchDistance = null;
         });
