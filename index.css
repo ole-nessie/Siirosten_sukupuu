@@ -589,6 +589,74 @@ header .toolbar {
   margin-left: auto;
 }
 
+/* Photo Gallery & Notes & Links */
+.photo-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.photo-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.photo-item img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.photo-item img:hover {
+  transform: scale(1.02);
+  box-shadow: var(--shadow-sm);
+}
+
+.photo-caption {
+  font-size: 11px;
+  color: var(--text-secondary);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.note-text {
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 8px 0;
+  color: var(--text-secondary);
+}
+
+.links-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.links-list li {
+  padding: 4px 0;
+}
+
+.links-list a {
+  font-size: 13px;
+  color: var(--accent-blue);
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  word-break: break-all;
+}
+
+.links-list a:hover {
+  text-decoration: underline;
+}
+
 .detail-actions {
   padding: 12px 20px;
   border-top: 1px solid var(--border-subtle);
@@ -714,6 +782,49 @@ header .toolbar {
   font-weight: 500;
   color: var(--text-secondary);
   margin-bottom: 6px;
+}
+
+.dynamic-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.dynamic-list-item {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.dynamic-list-item input,
+.dynamic-list-item textarea {
+  flex: 1;
+}
+
+.dynamic-list-item .photo-inputs {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+}
+
+.dynamic-list-item button {
+  padding: 6px 10px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 2px;
+}
+
+.dynamic-list-item button:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
 }
 
 .form-group input,

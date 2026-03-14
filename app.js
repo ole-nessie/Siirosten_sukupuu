@@ -94,6 +94,7 @@
                 marriedNames: [],
                 notes: [],
                 photos: [],
+                links: [],
                 createdate: unit.getAttribute('createdate'),
                 // Relations (filled later)
                 spouseIds: [],
@@ -158,7 +159,14 @@
                     }
                     case 'NOTE': {
                         const nt = notice.querySelector('notetext');
-                        if (nt?.textContent) person.notes.push(nt.textContent);
+                        if (nt?.textContent) {
+                            const text = nt.textContent.trim();
+                            if (text.match(/^https?:\/\/\S+$/i)) {
+                                person.links.push(text);
+                            } else {
+                                person.notes.push(text);
+                            }
+                        }
                         break;
                     }
                     case 'PHOT':
@@ -414,13 +422,36 @@
 
         html += '</div>';
 
-        // Notes
-        if (p.notes.length) {
-            html += '<div class="detail-section"><h3>Muistiinpanot</h3>';
+        // Photos (Galleria)
+        if (p.photos && p.photos.length) {
+            html += '<div class="detail-section"><h3>Galleria</h3><div class="photo-gallery">';
+            p.photos.forEach(photo => {
+                html += `<div class="photo-item">
+                    <a href="${escapeHtml(photo.filename)}" target="_blank" rel="noopener noreferrer">
+                        <img src="${escapeHtml(photo.filename)}" alt="${escapeHtml(photo.title)}" loading="lazy">
+                    </a>
+                    ${photo.title ? `<div class="photo-caption">${escapeHtml(photo.title)}</div>` : ''}
+                </div>`;
+            });
+            html += '</div></div>';
+        }
+
+        // Notes (Tarina & Lisätiedot)
+        if (p.notes && p.notes.length) {
+            html += '<div class="detail-section"><h3>Tarina & Lisätiedot</h3>';
             p.notes.forEach(n => {
-                html += '<div style="font-size:13px;padding:6px 0;color:var(--text-secondary);">' + escapeHtml(n) + '</div>';
+                html += '<div class="note-text">' + escapeHtml(n).replace(/\n/g, '<br>') + '</div>';
             });
             html += '</div>';
+        }
+
+        // Links (Linkit)
+        if (p.links && p.links.length) {
+            html += '<div class="detail-section"><h3>Linkit</h3><ul class="links-list">';
+            p.links.forEach(link => {
+                html += `<li><a href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer">${escapeHtml(link)}</a></li>`;
+            });
+            html += '</ul></div>';
         }
 
         detailContent.innerHTML = html;
@@ -1195,6 +1226,37 @@
     }
 
     // ── Modal (Add/Edit) ──
+    function createDynamicItem(containerId, value = null, type = 'text') {
+        const container = document.getElementById(containerId);
+        const item = document.createElement('div');
+        item.className = 'dynamic-list-item';
+        
+        let inputHtml = '';
+        if (type === 'textarea') {
+            inputHtml = `<textarea rows="2" placeholder="Kirjoita tähän...">${escapeHtml(value || '')}</textarea>`;
+        } else if (type === 'photo') {
+            const filename = (value && value.filename) ? value.filename : '';
+            const title = (value && value.title) ? value.title : '';
+            inputHtml = `<div class="photo-inputs">
+                <input type="text" class="photo-filename" placeholder="kuvat/esimerkki.jpg" value="${escapeHtml(filename)}">
+                <input type="text" class="photo-title" placeholder="Kuvan otsikko (valinnainen)" value="${escapeHtml(title)}">
+            </div>`;
+        } else {
+            inputHtml = `<input type="text" placeholder="https://..." value="${escapeHtml(value || '')}">`;
+        }
+        
+        item.innerHTML = `
+            ${inputHtml}
+            <button type="button" class="btn-remove-item" title="Poista">✕</button>
+        `;
+        
+        item.querySelector('.btn-remove-item').addEventListener('click', () => {
+            item.remove();
+        });
+        
+        container.appendChild(item);
+    }
+
     function openModal(id = null) {
         editingId = id;
         const isEdit = !!id;
@@ -1204,6 +1266,11 @@
         initSearchableSelect('selFather');
         initSearchableSelect('selMother');
         initSearchableSelect('selSpouse');
+
+        // Clear dynamic lists
+        $('#formNotesContainer').innerHTML = '';
+        $('#formLinksContainer').innerHTML = '';
+        $('#formPhotosContainer').innerHTML = '';
 
         if (isEdit) {
             const p = individuals[id];
@@ -1220,7 +1287,10 @@
                 const name = (mn.givenname ? mn.givenname.replace(/\*/g, '') + ' ' : '') + mn.surname;
                 return mn.description ? name + ' (' + mn.description + ')' : name;
             }).join('; ');
-            $('#formNote').value = p.notes.join('\n');
+
+            p.notes.forEach(note => createDynamicItem('formNotesContainer', note, 'textarea'));
+            p.links.forEach(link => createDynamicItem('formLinksContainer', link, 'text'));
+            p.photos.forEach(photo => createDynamicItem('formPhotosContainer', photo, 'photo'));
 
             // Set parents
             const father = p.parentIds.find(pid => individuals[pid]?.sex === 'M');
@@ -1229,7 +1299,7 @@
             setSearchableValue('selMother', mother || '');
             setSearchableValue('selSpouse', p.spouseIds[0] || '');
         } else {
-            $$('.modal input, .modal textarea').forEach(el => el.value = '');
+            $$('.modal input:not([type="checkbox"]), .modal textarea').forEach(el => el.value = '');
             $('#formSex').value = 'M';
             setSearchableValue('selFather', '');
             setSearchableValue('selMother', '');
@@ -1260,7 +1330,16 @@
         const occu = $('#formOccu').value.trim();
         const educ = $('#formEduc').value.trim();
         const marriedNamesStr = $('#formMarriedNames').value.trim();
-        const note = $('#formNote').value.trim();
+        
+        const notes = Array.from(document.querySelectorAll('#formNotesContainer textarea')).map(el => el.value.trim()).filter(Boolean);
+        const links = Array.from(document.querySelectorAll('#formLinksContainer input')).map(el => el.value.trim()).filter(Boolean);
+        const photos = [];
+        document.querySelectorAll('#formPhotosContainer .dynamic-list-item').forEach(item => {
+            const filename = item.querySelector('.photo-filename').value.trim();
+            const title = item.querySelector('.photo-title').value.trim();
+            if (filename) photos.push({ filename, title });
+        });
+
         const fatherId = getSearchableValue('selFather');
         const motherId = getSearchableValue('selMother');
         const spouseId = getSearchableValue('selSpouse');
@@ -1296,9 +1375,9 @@
 
         // Update or create XML unit
         if (isEdit) {
-            updateXmlUnit(id, { givenname, surname, sex, birthDate, birthPlace, deathDate, deathPlace, occu, educ, marriedNames, note });
+            updateXmlUnit(id, { givenname, surname, sex, birthDate, birthPlace, deathDate, deathPlace, occu, educ, marriedNames, notes, links, photos });
         } else {
-            createXmlUnit(id, { givenname, surname, sex, birthDate, birthPlace, deathDate, deathPlace, occu, educ, marriedNames, note });
+            createXmlUnit(id, { givenname, surname, sex, birthDate, birthPlace, deathDate, deathPlace, occu, educ, marriedNames, notes, links, photos });
         }
 
         // Update relations
@@ -1387,17 +1466,52 @@
                 notices.appendChild(n);
             });
         }
-        if (data.note) {
-            const n = xmlDoc.createElement('notice');
-            n.setAttribute('tag', 'NOTE');
-            n.setAttribute('row', row++);
-            n.setAttribute('createdate', today);
-            const nt = xmlDoc.createElement('notetext');
-            nt.textContent = data.note;
-            n.appendChild(nt);
-            const nm = xmlDoc.createElement('name');
-            n.appendChild(nm);
-            notices.appendChild(n);
+        if (data.notes && data.notes.length) {
+            data.notes.forEach(noteText => {
+                const n = xmlDoc.createElement('notice');
+                n.setAttribute('tag', 'NOTE');
+                n.setAttribute('row', row++);
+                n.setAttribute('createdate', today);
+                const nt = xmlDoc.createElement('notetext');
+                nt.textContent = noteText;
+                n.appendChild(nt);
+                const nm = xmlDoc.createElement('name');
+                n.appendChild(nm);
+                notices.appendChild(n);
+            });
+        }
+        if (data.links && data.links.length) {
+            data.links.forEach(linkText => {
+                const n = xmlDoc.createElement('notice');
+                n.setAttribute('tag', 'NOTE');
+                n.setAttribute('row', row++);
+                n.setAttribute('createdate', today);
+                const nt = xmlDoc.createElement('notetext');
+                nt.textContent = linkText;
+                n.appendChild(nt);
+                const nm = xmlDoc.createElement('name');
+                n.appendChild(nm);
+                notices.appendChild(n);
+            });
+        }
+        if (data.photos && data.photos.length) {
+            data.photos.forEach(photo => {
+                const n = xmlDoc.createElement('notice');
+                n.setAttribute('tag', 'PHOT');
+                n.setAttribute('row', row++);
+                n.setAttribute('createdate', today);
+                const media = xmlDoc.createElement('media');
+                if (photo.title) {
+                    const title = xmlDoc.createElement('mediatitle');
+                    title.textContent = photo.title;
+                    media.appendChild(title);
+                }
+                const fn = xmlDoc.createElement('mediafilename');
+                fn.textContent = photo.filename;
+                media.appendChild(fn);
+                n.appendChild(media);
+                notices.appendChild(n);
+            });
         }
 
         unit.appendChild(notices);
@@ -1471,6 +1585,63 @@
                 n.appendChild(nm);
                 notices.appendChild(n);
             });
+        }
+
+        // Update NOTE, PHOT, PHOTO notices
+        const existingDataNotices = unit.querySelectorAll('notice[tag="NOTE"], notice[tag="PHOT"], notice[tag="PHOTO"]');
+        existingDataNotices.forEach(n => n.remove());
+
+        if ((data.notes && data.notes.length) || (data.links && data.links.length) || (data.photos && data.photos.length)) {
+            const notices = unit.querySelector('notices') || (() => { const n = xmlDoc.createElement('notices'); unit.appendChild(n); return n; })();
+            const todayDate = new Date().toISOString().split('T')[0];
+            
+            if (data.notes) {
+                data.notes.forEach(noteText => {
+                    const n = xmlDoc.createElement('notice');
+                    n.setAttribute('tag', 'NOTE');
+                    n.setAttribute('row', '99');
+                    n.setAttribute('createdate', todayDate);
+                    const nt = xmlDoc.createElement('notetext');
+                    nt.textContent = noteText;
+                    n.appendChild(nt);
+                    const nm = xmlDoc.createElement('name');
+                    n.appendChild(nm);
+                    notices.appendChild(n);
+                });
+            }
+            if (data.links) {
+                data.links.forEach(linkText => {
+                    const n = xmlDoc.createElement('notice');
+                    n.setAttribute('tag', 'NOTE');
+                    n.setAttribute('row', '99');
+                    n.setAttribute('createdate', todayDate);
+                    const nt = xmlDoc.createElement('notetext');
+                    nt.textContent = linkText;
+                    n.appendChild(nt);
+                    const nm = xmlDoc.createElement('name');
+                    n.appendChild(nm);
+                    notices.appendChild(n);
+                });
+            }
+            if (data.photos) {
+                data.photos.forEach(photo => {
+                    const n = xmlDoc.createElement('notice');
+                    n.setAttribute('tag', 'PHOT');
+                    n.setAttribute('row', '99');
+                    n.setAttribute('createdate', todayDate);
+                    const media = xmlDoc.createElement('media');
+                    if (photo.title) {
+                        const title = xmlDoc.createElement('mediatitle');
+                        title.textContent = photo.title;
+                        media.appendChild(title);
+                    }
+                    const fn = xmlDoc.createElement('mediafilename');
+                    fn.textContent = photo.filename;
+                    media.appendChild(fn);
+                    n.appendChild(media);
+                    notices.appendChild(n);
+                });
+            }
         }
     }
 
@@ -1710,6 +1881,10 @@
         searchInput.addEventListener('input', () => {
             renderPersonList(searchInput.value);
         });
+
+        $('#btnAddNote').addEventListener('click', () => createDynamicItem('formNotesContainer', '', 'textarea'));
+        $('#btnAddLink').addEventListener('click', () => createDynamicItem('formLinksContainer', '', 'text'));
+        $('#btnAddPhoto').addEventListener('click', () => createDynamicItem('formPhotosContainer', '', 'photo'));
 
         $('#btnAddPerson').addEventListener('click', () => openModal());
         $('#btnEditPerson').addEventListener('click', () => {
