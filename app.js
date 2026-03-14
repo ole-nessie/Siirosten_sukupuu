@@ -35,79 +35,24 @@
     const detailId = $('#detailId');
     const detailContent = $('#detailContent');
     const modalOverlay = $('#modalOverlay');
-    // ── Configuration ──
-    // OneDrive sharing URL for the XML data file.
-    // To set up: share the XML file on OneDrive → "Anyone with the link can view"
-    // Then paste the sharing URL here (e.g., https://1drv.ms/u/s!AbcDef...)
-    const ONEDRIVE_SHARE_URL = 'https://1drv.ms/u/c/cc9a901ed0118a0d/IQB-Sqg25_1aSqOQR-WLmz7MAds3stJYvqC7Xhb3eYtSfT4?e=fT0V6i'; // ← Paste your OneDrive sharing link here
-
     // ── Init ──
-    // Convert a OneDrive sharing URL to a direct download API URL
-    function onedriveDirectUrl(sharingUrl) {
-        if (!sharingUrl) return null;
-        const base64 = btoa(sharingUrl)
-            .replace(/=/g, '')
-            .replace(/\//g, '_')
-            .replace(/\+/g, '-');
-        return 'https://api.onedrive.com/v1.0/shares/u!' + base64 + '/root/content';
-    }
-
     async function init() {
         bindEvents();
 
         const saved = localStorage.getItem('sukupuu_xml');
         const hasDraft = !!saved;
 
-        if (ONEDRIVE_SHARE_URL) {
-            if (hasDraft) {
-                const useDraft = confirm('Sinulla on tallentamattomia muutoksia selaimessa.\n\nHaluatko ladata nämä muutokset (OK) vai ladata uusimman version OneDrivesta (Peruuta)?');
-                if (useDraft) {
-                    loadXmlString(saved);
-                    updateFileName('Sukupuu (paikallinen luonnos)', '');
-                    showToast('Ladattu paikallinen luonnos');
-                    return;
-                }
-            }
-
-            // Try loading from OneDrive
-            try {
-                const url = onedriveDirectUrl(ONEDRIVE_SHARE_URL);
-                const resp = await fetch(url);
-                if (resp.ok) {
-                    const xmlText = await resp.text();
-                    loadXmlString(xmlText);
-                    updateFileName('Sukupuu (OneDrive)', '');
-                    showToast('Ladattu OneDrivesta');
-                } else {
-                    throw new Error('OneDrive vastaus: ' + resp.status);
-                }
-            } catch (e) {
-                console.warn('OneDrive-lataus epäonnistui:', e);
-                alert('Tiedoston lataus OneDrivesta epäonnistui. Ladataan oletustiedosto.');
-                await loadLocalXml();
-            }
-        } else {
-            if (hasDraft) {
+        if (hasDraft) {
+            const useDraft = confirm('Sinulla on tallentamattomia muutoksia selaimessa.\n\nHaluatko ladata nämä muutokset (OK) vai olla lataamatta (Peruuta)?');
+            if (useDraft) {
                 loadXmlString(saved);
                 updateFileName('Sukupuu (paikallinen luonnos)', '');
                 showToast('Ladattu paikallinen luonnos');
-            } else {
-                await loadLocalXml();
+                return;
             }
         }
-    }
 
-    async function loadLocalXml() {
-        try {
-            const resp = await fetch('family.xml');
-            if (resp.ok) {
-                const xmlText = await resp.text();
-                loadXmlString(xmlText);
-                updateFileName('family.xml', '');
-            }
-        } catch (e) {
-            console.log('family.xml ei löytynyt.');
-        }
+        openFile();
     }
 
     // ── XML Parsing ──
@@ -1598,7 +1543,7 @@
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = currentFileName && currentFileName !== 'Sukupuu (OneDrive)' ? currentFileName : 'family.xml';
+        a.download = currentFileName ? currentFileName : 'sukupuu_vienti.xml';
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
@@ -1607,7 +1552,7 @@
         // Clear the local draft since it has been exported
         localStorage.removeItem('sukupuu_xml');
 
-        showToast('Tiedosto ladattu. Voit avata sen tai ladata OneDriveen.');
+        showToast('Tiedosto ladattu onnistuneesti.');
     }
 
     // ── Toast ──
