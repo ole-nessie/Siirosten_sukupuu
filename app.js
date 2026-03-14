@@ -426,9 +426,15 @@
         if (p.photos && p.photos.length) {
             html += '<div class="detail-section"><h3>Galleria</h3><div class="photo-gallery">';
             p.photos.forEach(photo => {
+                let photoSrc = photo.filename;
+                if (!photoSrc.toLowerCase().startsWith('http')) {
+                    const baseName = photoSrc.split(/[\\/]/).pop();
+                    photoSrc = 'kuvat/' + baseName;
+                }
+                
                 html += `<div class="photo-item">
-                    <a href="${escapeHtml(photo.filename)}" target="_blank" rel="noopener noreferrer">
-                        <img src="${escapeHtml(photo.filename)}" alt="${escapeHtml(photo.title)}" loading="lazy">
+                    <a href="${escapeHtml(photoSrc)}" target="_blank" rel="noopener noreferrer">
+                        <img src="${escapeHtml(photoSrc)}" alt="${escapeHtml(photo.title)}" loading="lazy">
                     </a>
                     ${photo.title ? `<div class="photo-caption">${escapeHtml(photo.title)}</div>` : ''}
                 </div>`;
