@@ -13,6 +13,13 @@
   <div class="app" id="app">
     <!-- Header -->
     <header>
+      <button class="btn md-hidden" id="btnToggleLeft" title="Valikko" style="margin-right:8px; display:none;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="3" y1="12" x2="21" y2="12" />
+          <line x1="3" y1="6" x2="21" y2="6" />
+          <line x1="3" y1="18" x2="21" y2="18" />
+        </svg>
+      </button>
       <div class="logo">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
@@ -160,6 +167,9 @@
         </div>
       </div>
     </div>
+    
+    <!-- Mobile Overlay for Sidebars -->
+    <div class="mobile-overlay" id="sidebarOverlay"></div>
   </div>
 
   <!-- Add/Edit Modal -->

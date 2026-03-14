@@ -35,6 +35,12 @@
     const detailId = $('#detailId');
     const detailContent = $('#detailContent');
     const modalOverlay = $('#modalOverlay');
+    // Mobile DOM refs
+    const panelLeft = $('.panel-left');
+    const panelRight = $('.panel-right');
+    const sidebarOverlay = $('#sidebarOverlay');
+    const btnToggleLeft = $('#btnToggleLeft');
+    
     // ── Init ──
     async function init() {
         bindEvents();
@@ -302,6 +308,13 @@
         renderPersonList(searchInput.value);
         showDetail(id);
         showTree(id);
+        
+        // On mobile, auto-open right panel when a person is selected from list
+        if (window.innerWidth <= 900) {
+            panelLeft.classList.remove('open');
+            panelRight.classList.add('open');
+            sidebarOverlay.classList.add('active');
+        }
     }
 
     // ── Detail Panel ──
@@ -974,10 +987,6 @@
             scale = newScale;
             applyTransform();
         }, { passive: false });
-
-        $('#btnZoomIn').addEventListener('click', () => { scale = Math.min(3, scale + 0.15); applyTransform(); });
-        $('#btnZoomOut').addEventListener('click', () => { scale = Math.max(0.2, scale - 0.15); applyTransform(); });
-        $('#btnZoomFit').addEventListener('click', () => centerOnRoot());
     }
 
     // ── Searchable Select Component ──
@@ -1624,6 +1633,11 @@
         });
         $('#btnShowTree').addEventListener('click', () => {
             if (selectedId) showTree(selectedId);
+            // On mobile, hide right panel to see tree
+            if (window.innerWidth <= 900) {
+                panelRight.classList.remove('open');
+                sidebarOverlay.classList.remove('active');
+            }
         });
         $('#btnDeletePerson').addEventListener('click', () => {
             if (selectedId) deletePerson(selectedId);
@@ -1656,6 +1670,27 @@
         });
 
         initPanZoom();
+        
+        // Mobile Sidebar Events
+        if (btnToggleLeft) {
+            btnToggleLeft.addEventListener('click', () => {
+                panelLeft.classList.toggle('open');
+                if (panelLeft.classList.contains('open')) {
+                    panelRight.classList.remove('open');
+                    sidebarOverlay.classList.add('active');
+                } else {
+                    sidebarOverlay.classList.remove('active');
+                }
+            });
+        }
+
+        if (sidebarOverlay) {
+            sidebarOverlay.addEventListener('click', () => {
+                panelLeft.classList.remove('open');
+                panelRight.classList.remove('open');
+                sidebarOverlay.classList.remove('active');
+            });
+        }
     }
 
     // ── Bootstrap ──
