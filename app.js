@@ -952,6 +952,7 @@
 
     // ── Pan & Zoom ──
     function initPanZoom() {
+        // Mouse panning
         treeContainer.addEventListener('mousedown', e => {
             if (e.target.closest('.tree-node')) return;
             isPanning = true;
@@ -968,10 +969,13 @@
         });
 
         window.addEventListener('mouseup', () => {
-            isPanning = false;
-            treeContainer.style.cursor = 'grab';
+            if (isPanning) {
+                isPanning = false;
+                treeContainer.style.cursor = 'grab';
+            }
         });
 
+        // Mouse wheel zooming
         treeContainer.addEventListener('wheel', e => {
             e.preventDefault();
             const delta = e.deltaY > 0 ? -0.08 : 0.08;
@@ -987,6 +991,86 @@
             scale = newScale;
             applyTransform();
         }, { passive: false });
+
+        // Touch planning and pinching
+        let initialPinchDistance = null;
+        let initialScale = 1;
+
+        treeContainer.addEventListener('touchstart', e => {
+            if (e.target.closest('.tree-node')) return;
+            
+            if (e.touches.length === 1) {
+                // Start pan
+                isPanning = true;
+                panStartX = e.touches[0].clientX - panX;
+                panStartY = e.touches[0].clientY - panY;
+            } else if (e.touches.length === 2) {
+                // Start pinch zoom
+                isPanning = false;
+                initialPinchDistance = getPinchDistance(e.touches);
+                initialScale = scale;
+            }
+        }, { passive: false });
+
+        window.addEventListener('touchmove', e => {
+            if (isPanning && e.touches.length === 1) {
+                e.preventDefault(); // Prevent scrolling
+                panX = e.touches[0].clientX - panStartX;
+                panY = e.touches[0].clientY - panStartY;
+                applyTransform();
+            } else if (e.touches.length === 2 && initialPinchDistance) {
+                e.preventDefault(); // Prevent zooming browser
+                const currentDistance = getPinchDistance(e.touches);
+                const zoomFactor = currentDistance / initialPinchDistance;
+                const newScale = Math.max(0.2, Math.min(3, initialScale * zoomFactor));
+                
+                // Zoom towards center of pinch
+                const center = getPinchCenter(e.touches);
+                const rect = treeArea.getBoundingClientRect();
+                const mx = center.x - rect.left;
+                const my = center.y - rect.top;
+                
+                // Only adjust panX/panY if scale actually changed to avoid jumping
+                if (newScale !== scale) {
+                    panX = mx - (mx - panX) * (newScale / scale);
+                    panY = my - (my - panY) * (newScale / scale);
+                    scale = newScale;
+                    applyTransform();
+                }
+            }
+        }, { passive: false });
+
+        window.addEventListener('touchend', e => {
+            if (e.touches.length < 2) {
+                initialPinchDistance = null;
+            }
+            if (e.touches.length === 0) {
+                isPanning = false;
+            } else if (e.touches.length === 1 && !isPanning) {
+                // Fallback if lifting one finger after pinch
+                isPanning = true;
+                panStartX = e.touches[0].clientX - panX;
+                panStartY = e.touches[0].clientY - panY;
+            }
+        });
+        
+        window.addEventListener('touchcancel', () => {
+             isPanning = false;
+             initialPinchDistance = null;
+        });
+
+        function getPinchDistance(touches) {
+            const dx = touches[0].clientX - touches[1].clientX;
+            const dy = touches[0].clientY - touches[1].clientY;
+            return Math.sqrt(dx * dx + dy * dy);
+        }
+
+        function getPinchCenter(touches) {
+            return {
+                x: (touches[0].clientX + touches[1].clientX) / 2,
+                y: (touches[0].clientY + touches[1].clientY) / 2
+            };
+        }
     }
 
     // ── Searchable Select Component ──
