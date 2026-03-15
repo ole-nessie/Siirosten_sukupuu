@@ -422,25 +422,8 @@
 
         html += '</div>';
 
-        // Photos (Galleria)
-        if (p.photos && p.photos.length) {
-            html += '<div class="detail-section"><h3>Galleria</h3><div class="photo-gallery">';
-            p.photos.forEach(photo => {
-                let photoSrc = photo.filename;
-                if (!photoSrc.toLowerCase().startsWith('http')) {
-                    const baseName = photoSrc.split(/[\\/]/).pop();
-                    photoSrc = 'kuvat/' + baseName;
-                }
-                
-                html += `<div class="photo-item">
-                    <a href="${escapeHtml(photoSrc)}" target="_blank" rel="noopener noreferrer">
-                        <img src="${escapeHtml(photoSrc)}" alt="${escapeHtml(photo.title)}" loading="lazy">
-                    </a>
-                    ${photo.title ? `<div class="photo-caption">${escapeHtml(photo.title)}</div>` : ''}
-                </div>`;
-            });
-            html += '</div></div>';
-        }
+        // For the Web version, Photos (Galleria) is hidden. 
+        // The desktop version could inject logic here if needed.
 
         // Notes (Tarina & Lisätiedot)
         if (p.notes && p.notes.length) {
@@ -1276,7 +1259,6 @@
         // Clear dynamic lists
         $('#formNotesContainer').innerHTML = '';
         $('#formLinksContainer').innerHTML = '';
-        $('#formPhotosContainer').innerHTML = '';
 
         if (isEdit) {
             const p = individuals[id];
@@ -1296,7 +1278,6 @@
 
             p.notes.forEach(note => createDynamicItem('formNotesContainer', note, 'textarea'));
             p.links.forEach(link => createDynamicItem('formLinksContainer', link, 'text'));
-            p.photos.forEach(photo => createDynamicItem('formPhotosContainer', photo, 'photo'));
 
             // Set parents
             const father = p.parentIds.find(pid => individuals[pid]?.sex === 'M');
@@ -1339,12 +1320,9 @@
         
         const notes = Array.from(document.querySelectorAll('#formNotesContainer textarea')).map(el => el.value.trim()).filter(Boolean);
         const links = Array.from(document.querySelectorAll('#formLinksContainer input')).map(el => el.value.trim()).filter(Boolean);
-        const photos = [];
-        document.querySelectorAll('#formPhotosContainer .dynamic-list-item').forEach(item => {
-            const filename = item.querySelector('.photo-filename').value.trim();
-            const title = item.querySelector('.photo-title').value.trim();
-            if (filename) photos.push({ filename, title });
-        });
+        
+        // We preserve existing photos if editing, but we don't allow modifying/adding them from the web UI
+        const photos = isEdit ? (individuals[editingId]?.photos || []) : [];
 
         const fatherId = getSearchableValue('selFather');
         const motherId = getSearchableValue('selMother');
@@ -1890,7 +1868,6 @@
 
         $('#btnAddNote').addEventListener('click', () => createDynamicItem('formNotesContainer', '', 'textarea'));
         $('#btnAddLink').addEventListener('click', () => createDynamicItem('formLinksContainer', '', 'text'));
-        $('#btnAddPhoto').addEventListener('click', () => createDynamicItem('formPhotosContainer', '', 'photo'));
 
         $('#btnAddPerson').addEventListener('click', () => openModal());
         $('#btnEditPerson').addEventListener('click', () => {
