@@ -1,0 +1,2143 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sukupuu</title>
+<style>
+  :root{
+    --bg:#f4f7f4; --panel:#ffffff; --ink:#1c2630; --muted:#647280;
+    --line:#dfe6e0; --accent:#3e8a73; --accent2:#7bc3a7;
+    --male:#dbe7f2; --maleBorder:#5085b1;
+    --female:#f5dde2; --femaleBorder:#b86c83;
+    --focus:#fef3c4; --focusBorder:#d4a72c;
+    --hover:#fafdfb;
+    --soft:#f0f5f0;     /* subtle background tint for sections / panels */
+    --soft2:#e8f1ec;    /* slightly stronger tint for hovers */
+    --danger:#c14a47; --dangerHover:#9d3f3d;
+    --warn:#c25a00;
+    --shadow:0 1px 2px rgba(31,53,42,.04), 0 6px 18px rgba(31,53,42,.07);
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;background:var(--bg);color:var(--ink);font-size:14px}
+  button{font:inherit;color:inherit;background:#fff;border:1px solid var(--line);border-radius:6px;padding:5px 10px;cursor:pointer}
+  button:hover{background:var(--soft)}
+  button:disabled{opacity:.4;cursor:default}
+  button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+  button.primary:hover{background:#2c6f5b;border-color:#2c6f5b}
+  button.danger{background:var(--danger);color:#fff;border-color:var(--danger)}
+  button.danger:hover{background:var(--dangerHover);border-color:var(--dangerHover)}
+  input[type=text],input[type=search],select,textarea{font:inherit;color:inherit;background:#fff;border:1px solid var(--line);border-radius:6px;padding:5px 8px}
+  textarea{resize:vertical;min-height:60px}
+  input:focus,select:focus,textarea:focus,button:focus{outline:2px solid var(--accent2);outline-offset:1px}
+
+  .app{display:grid;grid-template-rows:auto 1fr auto;height:100vh}
+  .toolbar{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px 12px;background:#fbfdfb;border-bottom:1px solid var(--line);box-shadow:var(--shadow)}
+  .toolbar .group{display:flex;gap:4px;align-items:center;padding:0 6px;border-right:1px solid var(--line)}
+  .toolbar .group:last-child{border-right:0}
+  .toolbar label{font-size:12px;color:var(--muted);margin-right:4px}
+  .toolbar .spacer{flex:1}
+  .toolbar .filename{font-weight:600;color:var(--accent);max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .toolbar .dirty{color:var(--warn);font-size:12px;margin-left:6px}
+
+  .main{display:grid;grid-template-columns:1fr 6px var(--editor-w,420px);min-height:0}
+  .splitter{cursor:col-resize;background:transparent;border-left:1px solid var(--line);transition:background .15s}
+  .splitter:hover,.splitter.dragging{background:var(--accent2)}
+  .editor-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:299;animation:fadeIn .2s ease}
+  .editor-close-btn{display:none}
+  @keyframes fadeIn{from{opacity:0}to{opacity:1}}
+  @keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+  @media (max-width:900px) and (min-width:769px){
+    .main{grid-template-columns:1fr;grid-template-rows:1fr auto}
+    .splitter{display:none}
+  }
+  /* Mobile: tree fills viewport, editor slides up as a bottom sheet on tap */
+  @media (max-width:768px){
+    .main{grid-template-columns:1fr;grid-template-rows:1fr}
+    .splitter{display:none}
+    .toolbar{padding:6px 8px;gap:4px;overflow-x:auto;flex-wrap:nowrap;scrollbar-width:none}
+    .toolbar::-webkit-scrollbar{display:none}
+    .toolbar .group{padding:0 3px;flex-shrink:0}
+    .toolbar button,.toolbar input,.toolbar select{font-size:13px;padding:6px 8px;min-height:36px}
+    .toolbar .filename{display:none}
+    .toolbar label{font-size:11px}
+    #search{width:120px !important}
+    .editor{
+      position:fixed;left:0;right:0;bottom:0;top:auto;
+      max-height:88vh;height:88vh;
+      border-radius:14px 14px 0 0;
+      border-left:0;border-top:1px solid var(--line);
+      box-shadow:0 -4px 24px rgba(0,0,0,.18);
+      transform:translateY(100%);
+      transition:transform .25s ease;
+      z-index:300;
+      padding-bottom:max(14px,env(safe-area-inset-bottom));
+    }
+    .editor.mobile-open{transform:translateY(0)}
+    .editor-backdrop.mobile-open{display:block}
+    .editor-close-btn{display:flex;justify-content:space-between;align-items:center;
+      position:sticky;top:-14px;background:#fff;padding:10px 4px;margin:-14px -14px 8px;
+      border-bottom:1px solid var(--line);z-index:5;border-radius:14px 14px 0 0}
+    .editor-close-btn .name{font-weight:600;color:var(--accent);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 8px}
+    .editor-close-btn button{padding:8px 14px;font-size:16px;line-height:1;min-width:44px;min-height:36px}
+    .search-results{left:8px !important;right:8px !important;min-width:0 !important;max-height:60vh;width:auto}
+    .add-person-menu{left:50% !important;transform:translateX(-50%);min-width:200px}
+    .modal{min-width:0 !important;max-width:92vw}
+    .person-box{cursor:default}
+    /* iOS safe areas */
+    .toolbar{padding-top:max(8px,env(safe-area-inset-top))}
+    .statusbar{padding-bottom:max(6px,env(safe-area-inset-bottom))}
+    .tree-pane{padding-bottom:env(safe-area-inset-bottom)}
+  }
+  .tree-pane{position:relative;background:var(--bg);overflow:hidden;border-right:1px solid var(--line)}
+  .tree-svg{width:100%;height:100%;display:block;cursor:grab}
+  .tree-svg.dragging{cursor:grabbing}
+  .tree-empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--muted);text-align:center;padding:20px;gap:12px}
+  .tree-empty h2{margin:0;color:var(--ink);font-weight:600}
+
+  .person-box{cursor:pointer}
+  .person-box rect{fill:var(--panel);stroke:var(--line);stroke-width:1;rx:6;ry:6}
+  .person-box.male rect{fill:var(--male);stroke:var(--maleBorder)}
+  .person-box.female rect{fill:var(--female);stroke:var(--femaleBorder)}
+  .person-box.focus rect{fill:var(--focus);stroke:var(--focusBorder);stroke-width:2}
+  .person-box:hover rect{filter:brightness(1.05)}
+  .person-box text{font-family:inherit;pointer-events:none;user-select:none}
+  .person-box .pname{font-weight:600;font-size:12px;fill:var(--ink)}
+  .person-box .pdates{font-size:11px;fill:var(--muted)}
+
+  .link{fill:none;stroke:#8aa898;stroke-width:1.4}
+  .link.spouse{stroke:var(--accent);stroke-dasharray:4 3;opacity:.7}
+
+  .editor{background:var(--panel);overflow-y:auto;border-left:1px solid var(--line);padding:14px;display:flex;flex-direction:column;gap:14px}
+  .editor h3{margin:0 0 4px;font-size:14px;color:var(--accent)}
+  .editor .empty{color:var(--muted);text-align:center;padding:30px 10px}
+  .field{display:flex;flex-direction:column;gap:3px;min-width:0}
+  .field label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+  /* Auto-collapse: 2 columns when there's room for at least 140px per field, else 1 column */
+  .row{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:6px}
+  .editor section{padding:10px;background:var(--soft);border:1px solid var(--line);border-radius:8px}
+  .editor section header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+  .editor section header h4{margin:0;font-size:13px;color:var(--accent)}
+
+  .event{padding:8px;border:1px solid var(--line);border-radius:6px;background:#fff;margin-bottom:8px}
+  .event:last-child{margin-bottom:0}
+  .event header{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+  .event header .tag{font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase}
+  .event .row3{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:6px}
+  .add-event-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:6px;margin-bottom:8px}
+  .add-event-row select{font-size:12px;min-width:0}
+  .add-event-row button{white-space:nowrap}
+  .event .icon-btn{padding:2px 6px;font-size:11px}
+
+  .relation-list{display:flex;flex-direction:column;gap:4px}
+  .relation-item{display:flex;justify-content:space-between;align-items:center;padding:6px 8px;background:#fff;border:1px solid var(--line);border-radius:6px;font-size:13px}
+  .relation-item .name{cursor:pointer;color:var(--accent);text-decoration:none}
+  .relation-item .name:hover{text-decoration:underline}
+  .relation-item .actions{display:flex;gap:4px}
+  .relation-item .actions button{padding:1px 6px;font-size:11px}
+
+  .statusbar{display:flex;justify-content:space-between;align-items:center;padding:6px 14px;background:#fbfdfb;border-top:1px solid var(--line);font-size:12px;color:var(--muted)}
+
+  .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;z-index:100}
+  .modal{background:#fff;border-radius:10px;padding:20px;min-width:320px;max-width:90vw;box-shadow:var(--shadow)}
+  .modal h3{margin:0 0 12px;color:var(--accent)}
+  .modal .actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
+
+  .search-results{position:fixed;background:#fff;border:1px solid var(--line);border-radius:6px;box-shadow:var(--shadow);overflow-y:auto;min-width:300px;z-index:1000}
+  .search-results .item{padding:6px 10px;cursor:pointer;border-bottom:1px solid var(--line)}
+  .search-results .item:last-child{border-bottom:0}
+  .search-results .item:hover,.search-results .item.sel{background:var(--soft2)}
+  .search-results .item .sub{font-size:11px;color:var(--muted)}
+
+  .toast{position:fixed;bottom:50px;left:50%;transform:translateX(-50%);background:#1f2328;color:#fff;padding:10px 16px;border-radius:8px;box-shadow:var(--shadow);font-size:13px;z-index:200;animation:fade 3s ease forwards}
+  @keyframes fade{0%{opacity:0;transform:translate(-50%,10px)}10%,80%{opacity:1;transform:translate(-50%,0)}100%{opacity:0;transform:translate(-50%,-5px)}}
+
+  .photo-thumb{max-width:120px;max-height:120px;border-radius:6px;display:block;margin-top:4px;border:1px solid var(--line)}
+  .missing-photo{font-size:11px;color:var(--muted);font-style:italic;margin-top:4px}
+  .primary-photo-wrap{display:flex;justify-content:center;margin-bottom:10px}
+  .primary-photo{display:flex;justify-content:center;align-items:center;min-height:0}
+  .primary-photo .photo-large{max-width:240px;max-height:280px;border-radius:8px;border:1px solid var(--line);box-shadow:var(--shadow);display:block}
+
+  .add-person-menu{position:absolute;background:#fff;border:1px solid var(--line);border-radius:6px;box-shadow:var(--shadow);padding:4px;display:flex;flex-direction:column;gap:2px;z-index:60;min-width:160px}
+  .add-person-menu button{text-align:left;border:0;background:none;padding:6px 10px;border-radius:4px}
+  .add-person-menu button:hover{background:var(--soft2)}
+
+  kbd{font-family:inherit;background:var(--soft);border:1px solid var(--line);border-radius:3px;padding:1px 5px;font-size:11px}
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- TOOLBAR -->
+  <div class="toolbar" id="toolbar">
+    <div class="group">
+      <button id="btn-new" data-i18n="newFile" title="newFile"></button>
+      <button id="btn-open" data-i18n="open" title="open"></button>
+      <button id="btn-save" data-i18n="save" title="save" disabled></button>
+      <button id="btn-saveas" data-i18n="saveAs" title="saveAs" disabled></button>
+    </div>
+    <div class="group">
+      <button id="btn-undo" title="undo" disabled>↶</button>
+      <button id="btn-redo" title="redo" disabled>↷</button>
+    </div>
+    <div class="group">
+      <label data-i18n="view"></label>
+      <button id="btn-view-hourglass" data-i18n="viewHourglass" class="primary"></button>
+      <button id="btn-view-pedigree" data-i18n="viewPedigree"></button>
+      <button id="btn-view-desc" data-i18n="viewDescendant"></button>
+    </div>
+    <div class="group">
+      <label data-i18n="generations"></label>
+      <input type="range" id="depth" min="1" max="10" value="3">
+      <span id="depth-val">3</span>
+    </div>
+    <div class="group" style="position:relative">
+      <input type="search" id="search" placeholder="" style="width:160px">
+      <div id="search-results" class="search-results" style="display:none"></div>
+    </div>
+    <div class="group">
+      <button id="btn-add" data-i18n="addPerson"></button>
+    </div>
+    <div class="group">
+      <button id="btn-photos" title="" data-i18n="photoFolder">📷</button>
+    </div>
+    <div class="spacer"></div>
+    <div class="group">
+      <span class="filename" id="filename"></span>
+      <span class="dirty" id="dirty" style="display:none"></span>
+    </div>
+    <div class="group">
+      <button id="btn-lang">FI</button>
+    </div>
+  </div>
+
+  <!-- MAIN -->
+  <div class="main">
+    <div class="tree-pane" id="tree-pane">
+      <svg class="tree-svg" id="tree-svg" xmlns="http://www.w3.org/2000/svg"></svg>
+      <div class="tree-empty" id="tree-empty">
+        <h2 data-i18n="welcomeTitle"></h2>
+        <p data-i18n="welcomeBody"></p>
+        <button id="btn-open-empty" class="primary" data-i18n="open"></button>
+        <p style="font-size:12px;color:var(--muted)" data-i18n="dragHint"></p>
+      </div>
+    </div>
+    <div class="splitter" id="splitter" title="Resize"></div>
+    <div class="editor-backdrop" id="editor-backdrop"></div>
+    <div class="editor" id="editor">
+      <div class="empty" data-i18n="selectPerson"></div>
+    </div>
+  </div>
+
+  <!-- STATUS -->
+  <div class="statusbar">
+    <span id="status-left"></span>
+    <span id="status-right"></span>
+  </div>
+</div>
+<input type="file" id="file-input" accept=".xml" style="display:none">
+
+<script type="module">
+// ============================================================================
+// GENEALOG PARSER + MODEL (inlined from genealog.mjs)
+// ============================================================================
+class XmlNode {
+  constructor(name, attrs = [], children = [], selfClosing = false) {
+    this.name = name; this.attrs = attrs; this.children = children;
+    this.selfClosing = selfClosing; this.text = '';
+  }
+  static text(s) { const n = new XmlNode(null); n.text = s; return n; }
+  isText() { return this.name === null; }
+  attr(name) { for (const [k,v] of this.attrs) if (k===name) return v; return undefined; }
+  setAttr(name, value) { for (const a of this.attrs) if (a[0]===name){a[1]=value;return;} this.attrs.push([name,value]); }
+  removeAttr(name) { this.attrs = this.attrs.filter(a => a[0]!==name); }
+  child(name) { for (const c of this.children) if (!c.isText() && c.name===name) return c; return null; }
+  childAll(name) { return this.children.filter(c => !c.isText() && c.name===name); }
+  childText(name) {
+    const c = this.child(name); if (!c) return '';
+    return c.children.filter(x => x.isText()).map(x => decodeEntities(x.text)).join('');
+  }
+}
+function decodeEntities(s){
+  return s.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&apos;/g,"'")
+    .replace(/&#(\d+);/g,(_,n)=>String.fromCharCode(parseInt(n,10)))
+    .replace(/&#x([0-9a-fA-F]+);/g,(_,n)=>String.fromCharCode(parseInt(n,16)))
+    .replace(/&amp;/g,'&');
+}
+function encodeText(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function encodeAttr(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+
+function parseXml(src){
+  let i=0; const n=src.length; let decl=null;
+  if (src.startsWith('<?xml',i)){const end=src.indexOf('?>',i);if(end<0)throw new Error('unterm decl');decl=src.slice(i,end+2);i=end+2;}
+  while(i<n && /\s/.test(src[i])) i++;
+  function parseElement(){
+    if (src[i]!=='<') throw new Error('expected <');
+    i++; const ns=i; while(i<n && !/[\s\/>]/.test(src[i])) i++;
+    const name=src.slice(ns,i); const node=new XmlNode(name);
+    while(i<n){
+      while(i<n && /\s/.test(src[i])) i++;
+      if (src[i]==='/' || src[i]==='>') break;
+      const as=i; while(i<n && src[i]!=='=' && !/\s/.test(src[i])) i++;
+      const aName=src.slice(as,i);
+      while(i<n && /\s/.test(src[i])) i++;
+      if (src[i]!=='=') throw new Error('expected =');
+      i++; while(i<n && /\s/.test(src[i])) i++;
+      const q=src[i]; if (q!=='"' && q!=="'") throw new Error('expected quote');
+      i++; const vs=i; while(i<n && src[i]!==q) i++;
+      const aVal=decodeEntities(src.slice(vs,i)); i++;
+      node.attrs.push([aName,aVal]);
+    }
+    if (src[i]==='/'){i++; if(src[i]!=='>')throw new Error('expected >');i++;node.selfClosing=true;return node;}
+    if (src[i]!=='>') throw new Error('expected >'); i++;
+    while(i<n){
+      if (src.startsWith('</',i)){
+        i+=2; const cs=i; while(i<n && src[i]!=='>') i++;
+        const cName=src.slice(cs,i).trim();
+        if (cName!==name) throw new Error('mismatch close: '+cName+' vs '+name);
+        i++; return node;
+      }
+      if (src.startsWith('<!--',i)){const end=src.indexOf('-->',i);if(end<0)throw new Error('unterm comment');i=end+3;continue;}
+      if (src[i]==='<'){node.children.push(parseElement());continue;}
+      const ts=i; while(i<n && src[i]!=='<') i++;
+      node.children.push(XmlNode.text(src.slice(ts,i)));
+    }
+    throw new Error('EOF in '+name);
+  }
+  return {decl, root: parseElement()};
+}
+
+function serializeXml(parsed){
+  const out=[]; if(parsed.decl) out.push(parsed.decl);
+  serializeNode(parsed.root,out); return out.join('');
+}
+function serializeNode(node,out){
+  if (node.isText()){out.push(node.text);return;}
+  out.push('<',node.name);
+  for (const [k,v] of node.attrs) out.push(' ',k,'="',encodeAttr(v),'"');
+  if (node.selfClosing && node.children.length===0){out.push('/>');return;}
+  if (node.children.length===0){out.push('></',node.name,'>');return;}
+  out.push('>'); for (const c of node.children) serializeNode(c,out);
+  out.push('</',node.name,'>');
+}
+
+const KNOWN_NOTICE_TAGS = ['NAME','BIRT','CHR','DEAT','BURI','OCCU','EDUC','EMIG','IMMI','PHOT','PHOTO','NOTE','FAMT'];
+
+class Genealog {
+  constructor(parsed){
+    this.parsed=parsed; this.root=parsed.root;
+    if (this.root.name!=='genealog') throw new Error('Root must be <genealog>');
+    this.unitsNode=this.ensureChild('units',this.root);
+    this.relationsNode=this.ensureChild('relations',this.root);
+    this.persons=new Map();
+    for (const u of this.unitsNode.childAll('unit')){
+      const id=u.attr('unitid'); if(id) this.persons.set(id,u);
+    }
+    this.relations=this.relationsNode.childAll('relation');
+    // Owner mediapath for photo lookup
+    const owner = this.root.child('owner');
+    this.mediapath = owner ? owner.childText('mediapath') : '';
+  }
+  ensureChild(name,parent){let c=parent.child(name);if(!c){c=new XmlNode(name);parent.children.push(c);}return c;}
+
+  givenname(p){const nm=p.child('name');return nm?nm.childText('givenname'):'';}
+  surname(p){const nm=p.child('name');return nm?nm.childText('surname'):'';}
+  fullName(p){const g=this.givenname(p),s=this.surname(p);return (g+' '+s).trim()||'?';}
+  sex(p){return p.attr('sex')||'';}
+  unitid(p){return p.attr('unitid')||'';}
+
+  setGivenname(p,val){const nm=this.ensureChild('name',p);this.setOptionalChild(nm,'givenname',val);}
+  setSurname(p,val){const nm=this.ensureChild('name',p);this.setOptionalChild(nm,'surname',val);}
+  setSex(p,val){p.setAttr('sex',val);}
+
+  events(p){
+    const notices=p.child('notices'); if(!notices) return [];
+    return notices.childAll('notice').map(n=>this.eventFromNode(n))
+      .sort((a,b)=>a.row-b.row);
+  }
+  eventFromNode(n){
+    const dn=n.child('date'); const bdn=n.child('begindate');
+    const ev={node:n, tag:n.attr('tag')||'', row:parseInt(n.attr('row')||'0',10),
+      createdate:n.attr('createdate')||'', date:dn?dn.childText('start'):'',
+      beginDate:bdn?bdn.childText('start'):'', place:n.childText('place'),
+      description:n.childText('description'), notetext:n.childText('notetext'),
+      mediafilename:'', mediatitle:''};
+    const m=n.child('media');
+    if(m){ev.mediafilename=m.childText('mediafilename'); ev.mediatitle=m.childText('mediatitle');}
+    if (n.attr('tag')==='NAME'){
+      const nameNode=n.child('name');
+      if(nameNode){ev.nameGiven=nameNode.childText('givenname');ev.nameSurname=nameNode.childText('surname');}
+    }
+    return ev;
+  }
+  // Convenience: find first BIRT/DEAT date
+  birthYear(p){for(const e of this.events(p)) if(e.tag==='BIRT' && e.date) return e.date.slice(0,4); return '';}
+  deathYear(p){for(const e of this.events(p)) if(e.tag==='DEAT' && e.date) return e.date.slice(0,4); return '';}
+  birthInfo(p){for(const e of this.events(p)) if(e.tag==='BIRT') return e; return null;}
+
+  // In this XML format: <relation unitida="CHILD" unitidb="PARENT" tag="CHIL"/>
+  parentsOf(id){const out=[];for(const r of this.relations) if(r.attr('tag')==='CHIL' && r.attr('unitida')===id) out.push(r.attr('unitidb'));return out;}
+  childrenOf(id){const out=[];for(const r of this.relations) if(r.attr('tag')==='CHIL' && r.attr('unitidb')===id) out.push(r.attr('unitida'));return out;}
+  spousesOf(id){
+    const out=[];
+    for (const r of this.relations) if (r.attr('tag')==='MARR'){
+      if (r.attr('unitida')===id) out.push({id:r.attr('unitidb'),node:r});
+      else if (r.attr('unitidb')===id) out.push({id:r.attr('unitida'),node:r});
+    }
+    return out;
+  }
+  // Find a relation matching pred (returns the first match)
+  findRelation(pred){return this.relations.find(pred);}
+
+  nextUnitId(){
+    let max=0; for (const id of this.persons.keys()){const m=/^I(\d+)$/.exec(id); if(m) max=Math.max(max,+m[1]);}
+    return 'I'+(max+1);
+  }
+  todayIso(){const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;}
+
+  addPerson({givenname='',surname='',sex='M'}={}){
+    const id=this.nextUnitId();
+    const u=new XmlNode('unit',[['unitid',id],['tag','INDI'],['sex',sex],['createdate',this.todayIso()]]);
+    const nameNode=new XmlNode('name');
+    const gn=new XmlNode('givenname'); if(givenname) gn.children.push(XmlNode.text(encodeText(givenname))); else gn.selfClosing=true;
+    const sn=new XmlNode('surname'); if(surname) sn.children.push(XmlNode.text(encodeText(surname))); else sn.selfClosing=true;
+    nameNode.children.push(gn); nameNode.children.push(sn);
+    u.children.push(nameNode);
+    u.children.push(new XmlNode('notices'));
+    this.unitsNode.children.push(u); this.persons.set(id,u);
+    return u;
+  }
+  removePerson(id){
+    const p=this.persons.get(id); if(!p) return;
+    this.unitsNode.children=this.unitsNode.children.filter(c=>c!==p);
+    this.persons.delete(id);
+    this.relations=this.relations.filter(r=>r.attr('unitida')!==id && r.attr('unitidb')!==id);
+    this.relationsNode.children=this.relationsNode.children.filter(c=>c.isText()||c.name!=='relation'||(c.attr('unitida')!==id && c.attr('unitidb')!==id));
+  }
+  addRelation(opts){
+    let r;
+    if (opts.tag==='CHIL'){
+      // Format: unitida=child, unitidb=parent
+      r=new XmlNode('relation',[['unitida',opts.childId],['unitidb',opts.parentId],['tag','CHIL'],['rowa','1'],['rowb','1'],['createdate',this.todayIso()]],[],true);
+    } else if (opts.tag==='MARR'){
+      r=new XmlNode('relation',[['unitida',opts.spouseAId],['unitidb',opts.spouseBId],['tag','MARR'],['rowa','1'],['rowb','1'],['createdate',this.todayIso()]]);
+      const beginDate=opts.beginDate||'', beginPlace=opts.beginPlace||'';
+      if (beginDate||beginPlace){
+        if (beginDate){const bd=new XmlNode('begindate');bd.children.push(new XmlNode('start',[],[XmlNode.text(encodeText(beginDate))]));r.children.push(bd);}
+        if (beginPlace) r.children.push(new XmlNode('beginplace',[],[XmlNode.text(encodeText(beginPlace))]));
+      } else r.selfClosing=true;
+    } else throw new Error('bad relation tag');
+    this.relations.push(r); this.relationsNode.children.push(r);
+    return r;
+  }
+  removeRelation(node){
+    this.relations=this.relations.filter(r=>r!==node);
+    this.relationsNode.children=this.relationsNode.children.filter(c=>c!==node);
+  }
+  nextRow(notices){let max=0;for(const n of notices.childAll('notice')){const r=parseInt(n.attr('row')||'0',10);if(r>max)max=r;}return max+1;}
+  addEvent(personId,opts){
+    const p=this.persons.get(personId); if(!p) throw new Error('no person');
+    const notices=this.ensureChild('notices',p);
+    const row=this.nextRow(notices);
+    const n=new XmlNode('notice',[['tag',opts.tag],['row',String(row)],['createdate',this.todayIso()]]);
+    if (opts.date){const dn=new XmlNode('date');dn.children.push(new XmlNode('start',[],[XmlNode.text(encodeText(opts.date))]));n.children.push(dn);}
+    if (opts.place) n.children.push(new XmlNode('place',[],[XmlNode.text(encodeText(opts.place))]));
+    if (opts.description) n.children.push(new XmlNode('description',[],[XmlNode.text(encodeText(opts.description))]));
+    if (opts.notetext) n.children.push(new XmlNode('notetext',[],[XmlNode.text(encodeText(opts.notetext))]));
+    if (opts.mediafilename||opts.mediatitle){
+      const m=new XmlNode('media');
+      const mf=new XmlNode('mediafilename');if(opts.mediafilename)mf.children.push(XmlNode.text(encodeText(opts.mediafilename)));else mf.selfClosing=true;
+      const mt=new XmlNode('mediatitle');if(opts.mediatitle)mt.children.push(XmlNode.text(encodeText(opts.mediatitle)));else mt.selfClosing=true;
+      m.children.push(mf); m.children.push(mt); n.children.push(m);
+    }
+    n.children.push(new XmlNode('name',[],[],true));
+    notices.children.push(n);
+    return n;
+  }
+  removeEvent(personId,noticeNode){
+    const p=this.persons.get(personId);if(!p)return;
+    const notices=p.child('notices');if(!notices)return;
+    notices.children=notices.children.filter(c=>c!==noticeNode);
+  }
+  setOptionalChild(parent,childName,value){
+    let c=parent.child(childName);
+    if (value===''||value==null){
+      if (c){
+        // Keep node but make self-closing (matches original style for empty <name/>)
+        c.children=[]; c.selfClosing=true;
+      }
+      return;
+    }
+    if (!c){c=new XmlNode(childName);
+      // Insert before any trailing <name/>
+      const idx=parent.children.findIndex(x=>!x.isText() && x.name==='name');
+      if (idx<0) parent.children.push(c); else parent.children.splice(idx,0,c);
+    }
+    c.children=[XmlNode.text(encodeText(value))]; c.selfClosing=false;
+  }
+  updateEvent(noticeNode,opts){
+    if (opts.date!==undefined){
+      let d=noticeNode.child('date');
+      if (opts.date===''){
+        if (d) noticeNode.children=noticeNode.children.filter(c=>c!==d);
+      } else {
+        if (!d){d=new XmlNode('date'); this.insertBeforeName(noticeNode,d);}
+        d.children=[new XmlNode('start',[],[XmlNode.text(encodeText(opts.date))])];
+      }
+    }
+    if (opts.place!==undefined) this.setOptionalChild(noticeNode,'place',opts.place);
+    if (opts.description!==undefined) this.setOptionalChild(noticeNode,'description',opts.description);
+    if (opts.notetext!==undefined) this.setOptionalChild(noticeNode,'notetext',opts.notetext);
+    // For NAME notices: the <name> is the payload (not a trailing empty), update its givenname/surname
+    if (opts.nameGiven!==undefined || opts.nameSurname!==undefined){
+      let nm = noticeNode.child('name');
+      if (!nm){ nm = new XmlNode('name'); noticeNode.children.push(nm); }
+      nm.selfClosing = false;
+      if (opts.nameGiven!==undefined){
+        let gn = nm.child('givenname');
+        if (!gn){ gn = new XmlNode('givenname'); nm.children.push(gn); }
+        gn.children = opts.nameGiven ? [XmlNode.text(encodeText(opts.nameGiven))] : [];
+        gn.selfClosing = !opts.nameGiven;
+      }
+      if (opts.nameSurname!==undefined){
+        let sn = nm.child('surname');
+        if (!sn){ sn = new XmlNode('surname'); nm.children.push(sn); }
+        sn.children = opts.nameSurname ? [XmlNode.text(encodeText(opts.nameSurname))] : [];
+        sn.selfClosing = !opts.nameSurname;
+      }
+    }
+    if (opts.mediafilename!==undefined||opts.mediatitle!==undefined){
+      let m=noticeNode.child('media');
+      if (!m){m=new XmlNode('media'); this.insertBeforeName(noticeNode,m);}
+      if (opts.mediafilename!==undefined){
+        let mf=m.child('mediafilename'); if(!mf){mf=new XmlNode('mediafilename');m.children.push(mf);}
+        mf.children=opts.mediafilename?[XmlNode.text(encodeText(opts.mediafilename))]:[]; mf.selfClosing=!opts.mediafilename;
+      }
+      if (opts.mediatitle!==undefined){
+        let mt=m.child('mediatitle'); if(!mt){mt=new XmlNode('mediatitle');m.children.push(mt);}
+        mt.children=opts.mediatitle?[XmlNode.text(encodeText(opts.mediatitle))]:[]; mt.selfClosing=!opts.mediatitle;
+      }
+    }
+  }
+  insertBeforeName(notice,newNode){
+    const idx=notice.children.findIndex(c=>!c.isText() && c.name==='name');
+    if (idx<0) notice.children.push(newNode); else notice.children.splice(idx,0,newNode);
+  }
+}
+
+// ============================================================================
+// I18N
+// ============================================================================
+const I18N = {
+  fi: {
+    newFile:'Uusi', open:'Avaa', save:'Tallenna', saveAs:'Tallenna nimellä',
+    undo:'Kumoa', redo:'Tee uudelleen',
+    view:'Näkymä', viewHourglass:'Tiimalasi', viewPedigree:'Sukutaulu', viewDescendant:'Jälkeläiset',
+    generations:'Sukupolvet', search:'Etsi nimellä…', addPerson:'Lisää henkilö',
+    selectPerson:'Valitse henkilö sukupuusta tai aloita lisäämällä uusi.',
+    welcomeTitle:'Sukupuu',
+    welcomeBody:'Avaa olemassa oleva XML-tiedosto tai luo uusi sukupuu.',
+    dragHint:'Voit myös vetää XML-tiedoston tähän ikkunaan.',
+    givenname:'Etunimet', surname:'Sukunimi', sex:'Sukupuoli', male:'Mies', female:'Nainen', unknown:'?',
+    eventsHeader:'Tapahtumat', addEvent:'Lisää tapahtuma',
+    relationsHeader:'Sukulaisuus', parents:'Vanhemmat', spouses:'Puolisot', children:'Lapset',
+    addParent:'Lisää vanhempi', addSpouse:'Lisää puoliso', addChild:'Lisää lapsi',
+    pickExisting:'Valitse olemassa oleva', createNew:'Luo uusi henkilö',
+    removePerson:'Poista henkilö',
+    confirmDeleteTitle:'Poistetaanko henkilö?',
+    confirmDeleteBody:'Henkilö "{name}" poistetaan. Sukulaisuussuhteita ({n}) poistetaan myös.',
+    confirmDeleteOk:'Poista',
+    cancel:'Peruuta', ok:'OK',
+    eventDate:'Päivämäärä', eventPlace:'Paikka', eventDescription:'Kuvaus', eventNote:'Muistiinpano',
+    eventMediaFile:'Kuvatiedoston nimi', eventMediaTitle:'Kuvan otsikko',
+    BIRT:'Syntymä', DEAT:'Kuolema', BURI:'Hautaus', CHR:'Kaste', OCCU:'Ammatti',
+    EDUC:'Koulutus', EMIG:'Maastamuutto', IMMI:'Maahanmuutto', PHOT:'Valokuva', PHOTO:'Valokuva',
+    NOTE:'Muistiinpano', NAME:'Nimenmuutos', FAMT:'Perhetapahtuma', MARR:'Avioliitto',
+    addEventTitle:'Lisää tapahtuma', eventType:'Tapahtumatyyppi',
+    persons:'henkilöä', dirty:'Tallentamattomia muutoksia', saved:'Tallennettu',
+    unsavedWarning:'Sinulla on tallentamattomia muutoksia. Haluatko poistua silti?',
+    saveError:'Tallennus epäonnistui',
+    photoMissing:'(kuva ei löydy: {file})',
+    pickPhotoFolder:'Valitse kuvakansio…', photoFolderSet:'Kuvakansio: {p}',
+    photoFolder:'Valitse kuvakansio',
+    photoHint:'Tämä sukupuu sisältää kuvaviittauksia. Valitse kuvakansio (esim. "kuvat") niin kuvat näkyvät.',
+    photoHintBtn:'Valitse kuvakansio…',
+    photoNotSupported:'Kuvakansion valinta vaatii Chrome- tai Edge-selaimen (tai macOS-sovellus).',
+    spouseDate:'Vihkimispäivä', spousePlace:'Vihkimispaikka',
+    chooseSex:'Sukupuoli',
+    untitledFile:'Nimetön sukupuu',
+    fileLoaded:'Tiedosto ladattu',
+    keyboardHelp:'⌘O Avaa · ⌘S Tallenna · ⌘⇧S Tallenna nimellä · ⌘Z Kumoa',
+    yes:'Kyllä', no:'Ei',
+    noResults:'Ei tuloksia', noEvents:'Ei tapahtumia',
+    pickPersonTitle:'Valitse henkilö',
+    confirmDiscard:'Hylätäänkö tallentamattomat muutokset?',
+    discard:'Hylkää',
+  },
+  en: {
+    newFile:'New', open:'Open', save:'Save', saveAs:'Save As',
+    undo:'Undo', redo:'Redo',
+    view:'View', viewHourglass:'Hourglass', viewPedigree:'Pedigree', viewDescendant:'Descendants',
+    generations:'Generations', search:'Search by name…', addPerson:'Add person',
+    selectPerson:'Select a person from the tree, or start by adding one.',
+    welcomeTitle:'Family Tree',
+    welcomeBody:'Open an existing XML file or start a new tree.',
+    dragHint:'You can also drag an XML file onto this window.',
+    givenname:'Given names', surname:'Surname', sex:'Sex', male:'Male', female:'Female', unknown:'?',
+    eventsHeader:'Events', addEvent:'Add event',
+    relationsHeader:'Relationships', parents:'Parents', spouses:'Spouses', children:'Children',
+    addParent:'Add parent', addSpouse:'Add spouse', addChild:'Add child',
+    pickExisting:'Pick existing', createNew:'Create new person',
+    removePerson:'Remove person',
+    confirmDeleteTitle:'Remove person?',
+    confirmDeleteBody:'"{name}" will be removed. {n} relationship(s) will also be removed.',
+    confirmDeleteOk:'Remove',
+    cancel:'Cancel', ok:'OK',
+    eventDate:'Date', eventPlace:'Place', eventDescription:'Description', eventNote:'Note',
+    eventMediaFile:'Image filename', eventMediaTitle:'Image caption',
+    BIRT:'Birth', DEAT:'Death', BURI:'Burial', CHR:'Christening', OCCU:'Occupation',
+    EDUC:'Education', EMIG:'Emigration', IMMI:'Immigration', PHOT:'Photo', PHOTO:'Photo',
+    NOTE:'Note', NAME:'Name change', FAMT:'Family event', MARR:'Marriage',
+    addEventTitle:'Add event', eventType:'Event type',
+    persons:'persons', dirty:'Unsaved changes', saved:'Saved',
+    unsavedWarning:'You have unsaved changes. Leave anyway?',
+    saveError:'Save failed',
+    photoMissing:'(photo not found: {file})',
+    pickPhotoFolder:'Choose photo folder…', photoFolderSet:'Photo folder: {p}',
+    photoFolder:'Choose photo folder',
+    photoHint:'This tree references photos. Choose the folder (e.g. "kuvat") and the images will appear.',
+    photoHintBtn:'Choose photo folder…',
+    photoNotSupported:'Choosing a photo folder requires Chrome or Edge browser (or use the macOS app).',
+    spouseDate:'Marriage date', spousePlace:'Marriage place',
+    chooseSex:'Sex',
+    untitledFile:'Untitled family',
+    fileLoaded:'File loaded',
+    keyboardHelp:'⌘O Open · ⌘S Save · ⌘⇧S Save As · ⌘Z Undo',
+    yes:'Yes', no:'No',
+    noResults:'No results', noEvents:'No events',
+    pickPersonTitle:'Pick a person',
+    confirmDiscard:'Discard unsaved changes?',
+    discard:'Discard',
+  }
+};
+let LANG = localStorage.getItem('lang') || 'fi';
+function t(key, vars){
+  let s = (I18N[LANG] && I18N[LANG][key]) || I18N.en[key] || key;
+  if (vars) for (const k in vars) s = s.replace(new RegExp('\\{'+k+'\\}','g'), vars[k]);
+  return s;
+}
+function applyI18n(){
+  document.documentElement.lang = LANG;
+  for (const el of document.querySelectorAll('[data-i18n]')){
+    const key = el.getAttribute('data-i18n');
+    el.textContent = t(key);
+    if (el.title) el.title = t(key);
+  }
+  document.getElementById('search').placeholder = t('search');
+  document.getElementById('btn-lang').textContent = LANG==='fi' ? 'EN' : 'FI';
+  // re-render UI bits that show translated labels
+  if (state.focusId) renderEditor();
+  renderStatus();
+}
+
+// ============================================================================
+// STATE & UNDO
+// ============================================================================
+const state = {
+  g: null,                     // Genealog
+  filename: '',                // current filename
+  fileHandle: null,            // FileSystemFileHandle when available
+  photoDirHandle: null,        // FileSystemDirectoryHandle for photos
+  view: 'hourglass',
+  depth: 3,
+  focusId: null,
+  dirty: false,
+  undoStack: [],
+  redoStack: [],
+  savedSnapshot: null,         // last saved snapshot (for dirty detection)
+};
+
+// We use snapshots for undo because mutations are pervasive. Snapshots are
+// strings (XML), which is cheap given the file sizes involved (~600KB).
+function snapshot(){ return state.g ? serializeXml(state.g.parsed) : null; }
+function restoreSnapshot(snap){
+  state.g = new Genealog(parseXml(snap));
+  if (state.focusId && !state.g.persons.has(state.focusId)) state.focusId = state.g.persons.keys().next().value || null;
+  render();
+}
+function pushUndo(){
+  if (!state.g) return;
+  state.undoStack.push(snapshot());
+  if (state.undoStack.length > 100) state.undoStack.shift();
+  state.redoStack.length = 0;
+  setDirty();
+  updateUndoButtons();
+}
+function undo(){
+  if (!state.undoStack.length) return;
+  const cur = snapshot();
+  state.redoStack.push(cur);
+  const prev = state.undoStack.pop();
+  restoreSnapshot(prev);
+  setDirty();
+  updateUndoButtons();
+}
+function redo(){
+  if (!state.redoStack.length) return;
+  state.undoStack.push(snapshot());
+  const next = state.redoStack.pop();
+  restoreSnapshot(next);
+  setDirty();
+  updateUndoButtons();
+}
+function updateUndoButtons(){
+  document.getElementById('btn-undo').disabled = !state.undoStack.length;
+  document.getElementById('btn-redo').disabled = !state.redoStack.length;
+}
+function setDirty(){
+  if (!state.g) return;
+  const cur = snapshot();
+  state.dirty = (cur !== state.savedSnapshot);
+  document.getElementById('dirty').style.display = state.dirty ? '' : 'none';
+  document.getElementById('dirty').textContent = state.dirty ? '● ' + t('dirty') : '';
+  document.getElementById('btn-save').disabled = !state.dirty || !state.fileHandle && !canSaveDirect();
+  document.getElementById('btn-saveas').disabled = !state.g;
+}
+function markSaved(){
+  state.savedSnapshot = snapshot();
+  state.dirty = false;
+  document.getElementById('dirty').style.display = 'none';
+  document.getElementById('btn-save').disabled = true;
+}
+
+// ============================================================================
+// TREE LAYOUT
+// ============================================================================
+const BOX_W = 150, BOX_H = 50, GAP_X = 24, GAP_Y = 70;
+
+function layoutHourglass(g, focusId, depth){
+  // Strategy:
+  //  1. Layout the descendants of focus as a general tree (subtree-width algorithm).
+  //  2. Layout the ancestors above by walking generation-by-generation. Each ancestor's
+  //     desired X is the average X of its known children; siblings within a generation
+  //     are then spaced left-to-right with min gap.
+  //  3. Add same-generation spouses of focus (and ancestors) next to their partner.
+
+  const positions = new Map(); // id -> {id, gen, x, y}
+  const parentEdges = [];
+  const spouseEdges = [];
+
+  // ---- DESCENDANTS subtree ----
+  // Each node stores its visible spouses (spouses not already in the descent tree as their own
+  // descent node). The "couple width" is 1 + spouseCount; the subtree width is max(coupleW, childTotalW).
+  // This gives every couple reserved horizontal space so spouses never collide with other people.
+  const descNodes = new Map();
+  function buildDesc(id, gen, visited){
+    if (!g.persons.has(id) || visited.has(id) || gen > depth) return null;
+    visited.add(id);
+    const n = {id, gen, children:[], spouses:[]};
+    descNodes.set(id, n);
+    // Collect spouses we will display (not already placed and not descended ourselves)
+    for (const sp of g.spousesOf(id)){
+      if (visited.has(sp.id)) continue;
+      visited.add(sp.id);
+      n.spouses.push(sp.id);
+    }
+    if (gen < depth){
+      for (const ch of g.childrenOf(id)){
+        const c = buildDesc(ch, gen+1, visited);
+        if (c) n.children.push(c);
+      }
+    }
+    return n;
+  }
+  const visitedDesc = new Set();
+  const descRoot = buildDesc(focusId, 0, visitedDesc);
+
+  function widthOf(n){
+    n.coupleW = 1 + n.spouses.length;
+    let childTotalW = 0;
+    for (const c of n.children) childTotalW += widthOf(c);
+    // Visible gap between sibling-groups that have their own children
+    const branching = n.children.filter(c => c.children.length > 0).length;
+    if (branching > 1) childTotalW += (branching - 1) * 0.4;
+    n.childTotalW = childTotalW;
+    n.subtreeW = Math.max(n.coupleW, childTotalW);
+    return n.subtreeW;
+  }
+  if (descRoot) widthOf(descRoot);
+
+  function placeDesc(n, x){
+    // Couple (person + spouses) centered horizontally in the subtree slot
+    const coupleOffset = (n.subtreeW - n.coupleW) / 2;
+    const personSlot = x + coupleOffset;
+    n.x = (personSlot + 0.5) * (BOX_W + GAP_X) - BOX_W/2;
+    n.y = n.gen * (BOX_H + GAP_Y);
+    positions.set(n.id, n);
+    for (let i = 0; i < n.spouses.length; i++){
+      const sx = (personSlot + 1 + i + 0.5) * (BOX_W + GAP_X) - BOX_W/2;
+      const sn = { id: n.spouses[i], gen: n.gen, x: sx, y: n.y, isSpouse: true };
+      positions.set(n.spouses[i], sn);
+      spouseEdges.push([n.id, n.spouses[i]]);
+    }
+    // Children centered horizontally in the subtree slot
+    const childOffset = (n.subtreeW - n.childTotalW) / 2;
+    let cx = x + childOffset;
+    for (let i = 0; i < n.children.length; i++){
+      const c = n.children[i];
+      placeDesc(c, cx);
+      cx += c.subtreeW;
+      if (i < n.children.length - 1 && c.children.length > 0) cx += 0.4;
+    }
+  }
+  if (descRoot) placeDesc(descRoot, 0);
+
+  // ---- ANCESTORS: bottom-up subtree widths ----
+  // Build a binary ancestor tree (father left, mother right). Each node's width =
+  // sum of its parents' widths (or 1 if no parents/leaf). This scales to arbitrary
+  // depth — the canvas only grows with actual data, not 2^depth slots.
+  const ancVisited = new Set([focusId]);
+  const focusNode = positions.get(focusId);
+  if (focusNode){
+    const slotUnit = BOX_W + GAP_X;
+    function buildAnc(id, gen){
+      if (gen < -depth || !g.persons.has(id)) return null;
+      const node = { id, gen, parents: [] };
+      if (gen > -depth){
+        const pIds = g.parentsOf(id).filter(p => !ancVisited.has(p));
+        const ranked = pIds.map(pid => {
+          const p = g.persons.get(pid);
+          const sex = p ? g.sex(p) : '';
+          return { pid, rank: sex === 'M' ? 0 : sex === 'F' ? 1 : 2 };
+        }).sort((a, b) => a.rank - b.rank);
+        for (const r of ranked.slice(0, 2)){
+          ancVisited.add(r.pid);
+          const sub = buildAnc(r.pid, gen - 1);
+          if (sub) node.parents.push(sub);
+        }
+      }
+      return node;
+    }
+    function ancW(node){
+      if (!node.parents.length) return 1;
+      let w = 0; for (const p of node.parents) w += ancW(p);
+      return Math.max(1, w);
+    }
+    function placeVirtual(node, leftX){
+      node._vx = leftX + ancW(node) / 2;
+      let cx = leftX;
+      for (const p of node.parents){ placeVirtual(p, cx); cx += ancW(p); }
+    }
+    const ancRoot = buildAnc(focusId, 0);
+    if (ancRoot){
+      placeVirtual(ancRoot, 0);
+      const focusCenter = focusNode.x + BOX_W/2;
+      const rootVx = ancRoot._vx;
+      function commit(node){
+        if (node.id !== focusId){
+          const x = focusCenter + (node._vx - rootVx) * slotUnit - BOX_W/2;
+          const y = node.gen * (BOX_H + GAP_Y);
+          positions.set(node.id, { id: node.id, gen: node.gen, x, y });
+        }
+        for (const p of node.parents) commit(p);
+      }
+      commit(ancRoot);
+    }
+  }
+
+  // ---- Parent edges between adjacent generations (visible only) ----
+  for (const [id, n] of positions){
+    for (const pid of g.parentsOf(id)){
+      if (positions.has(pid)) parentEdges.push({from: pid, to: id});
+    }
+  }
+
+  // ---- Marriage lines for visible couples (descent spouses already added during descent pass).
+  // Ancestor couples are drawn as MARR lines too. This loop never adds NEW boxes — that's
+  // already handled in the descent pass.
+  function pairKey(a,b){return a<b?a+'|'+b:b+'|'+a;}
+  const seenPairs = new Set();
+  for (const [a, b] of spouseEdges) seenPairs.add(pairKey(a, b));
+  for (const [id, n] of Array.from(positions.entries())){
+    for (const sp of g.spousesOf(id)){
+      if (!positions.has(sp.id)) continue;
+      const k = pairKey(id, sp.id);
+      if (seenPairs.has(k)) continue;
+      seenPairs.add(k);
+      spouseEdges.push([id, sp.id]);
+    }
+  }
+
+  return { positions, parentEdges, spouseEdges };
+}
+
+function layoutPedigree(g, focusId, depth){
+  // Binary ancestor tree, focus at the bottom. Bottom-up subtree widths so the canvas
+  // grows with actual data, not 2^depth.
+  const positions = new Map();
+  const visited = new Set([focusId]);
+  function build(id, gen){
+    if (gen < -depth || !g.persons.has(id)) return null;
+    const node = { id, gen, parents: [] };
+    if (gen > -depth){
+      const pIds = g.parentsOf(id).filter(p => !visited.has(p));
+      const ranked = pIds.map(pid => {
+        const sex = g.sex(g.persons.get(pid)) || '';
+        return { pid, rank: sex === 'M' ? 0 : sex === 'F' ? 1 : 2 };
+      }).sort((a, b) => a.rank - b.rank);
+      for (const r of ranked.slice(0, 2)){
+        visited.add(r.pid);
+        const sub = build(r.pid, gen - 1);
+        if (sub) node.parents.push(sub);
+      }
+    }
+    return node;
+  }
+  function w(node){
+    if (!node.parents.length) return 1;
+    let s = 0; for (const p of node.parents) s += w(p);
+    return Math.max(1, s);
+  }
+  function place(node, leftX){
+    const ww = w(node);
+    const cx = leftX + ww/2;
+    const x = cx * (BOX_W + GAP_X) - BOX_W/2;
+    // Pedigree: focus at the bottom, ancestors above. Use negative gen → negative y.
+    const y = -node.gen * (BOX_H + GAP_Y) * 1.2;  // gen=0 → 0, gen=-3 → 3*step (we'll flip via negation)
+    // Wait — we want gen=0 at MAX y (bottom), gen=-N at min y (top). Use:
+    //   y = (-gen) * step → gen=0 → 0, gen=-1 → step (lower on screen). Wrong direction.
+    // We want gen=0 at bottom: y_focus largest.
+    // Simplest: use absolute value. y = (-node.gen) won't work for "gen=0 at bottom".
+    // Approach: compute as y = baseline - (-gen)*step. Make baseline = 0, then gen=0 at y=0,
+    // gen=-N at y=-N*step (negative y, above). Auto-fit handles negative coords.
+    node.x = x;
+    node.y = node.gen * (BOX_H + GAP_Y) * 1.2;  // gen=0 → 0; gen=-N → -N*step (above 0)
+    let lcx = leftX;
+    for (const p of node.parents){
+      place(p, lcx);
+      lcx += w(p);
+    }
+    positions.set(node.id, node);
+  }
+  const root = build(focusId, 0);
+  if (!root) return { positions, parentEdges: [], spouseEdges: [] };
+  place(root, 0);
+  const parentEdges = [];
+  for (const [id, n] of positions){
+    for (const pid of g.parentsOf(id)){
+      if (positions.has(pid)) parentEdges.push({ from: pid, to: id });
+    }
+  }
+  return { positions, parentEdges, spouseEdges: [] };
+}
+
+function layoutDescendant(g, focusId, depth){
+  // General tree of descendants. Compute subtree widths bottom-up, then place.
+  const nodes = new Map(); // key (id+gen+pathHash) -> {id, gen, x, y, w}
+  let counter = 0;
+  function build(id, gen, parentKey){
+    if (!id || gen > depth || !g.persons.has(id)) return null;
+    const key = id+'#'+gen+'#'+(counter++);
+    const node = {id, gen, key, children: []};
+    if (gen < depth){
+      const kids = g.childrenOf(id);
+      for (const k of kids){
+        const child = build(k, gen+1, key);
+        if (child) node.children.push(child);
+      }
+    }
+    nodes.set(key, node);
+    return node;
+  }
+  const root = build(focusId, 0, null);
+  if (!root) return {positions:new Map(), parentEdges:[], spouseEdges:[], keyed:true};
+
+  // Compute subtree widths (in box units)
+  function widthOf(n){
+    if (!n.children.length){ n.subtreeW = 1; return 1; }
+    let w = 0;
+    for (const c of n.children) w += widthOf(c);
+    n.subtreeW = Math.max(1, w);
+    return n.subtreeW;
+  }
+  widthOf(root);
+  // Assign x positions
+  function place(n, x){
+    n.x = (x + n.subtreeW/2) * (BOX_W + GAP_X) - BOX_W/2;
+    n.y = n.gen * (BOX_H + GAP_Y) * 1.2;
+    let cx = x;
+    for (const c of n.children){ place(c, cx); cx += c.subtreeW; }
+  }
+  place(root, 0);
+
+  const positions = new Map();
+  const parentEdges = [];
+  function visit(n){
+    positions.set(n.key, n);
+    for (const c of n.children){
+      parentEdges.push({fromKey: n.key, toKey: c.key});
+      visit(c);
+    }
+  }
+  visit(root);
+  return { positions, parentEdges, spouseEdges:[], keyed:true };
+}
+
+function layout(g, view, focusId, depth){
+  if (!g || !focusId || !g.persons.has(focusId)) return null;
+  if (view === 'hourglass') return layoutHourglass(g, focusId, depth);
+  if (view === 'pedigree')  return layoutPedigree(g, focusId, depth);
+  return layoutDescendant(g, focusId, depth);
+}
+
+// ============================================================================
+// SVG RENDERING + PAN/ZOOM
+// ============================================================================
+const view = { tx: 0, ty: 0, scale: 1 };
+
+function renderTree(){
+  const svg = document.getElementById('tree-svg');
+  const empty = document.getElementById('tree-empty');
+  if (!state.g){
+    empty.style.display = '';
+    svg.innerHTML = '';
+    return;
+  }
+  empty.style.display = 'none';
+  const lay = layout(state.g, state.view, state.focusId, state.depth);
+  if (!lay){ svg.innerHTML = ''; return; }
+
+  const positions = lay.positions;
+  // Compute bounds
+  let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+  for (const [, n] of positions){
+    minX=Math.min(minX,n.x); minY=Math.min(minY,n.y);
+    maxX=Math.max(maxX,n.x+BOX_W); maxY=Math.max(maxY,n.y+BOX_H);
+  }
+  if (!isFinite(minX)){ svg.innerHTML=''; return; }
+  // Auto-fit on first render or after view change.
+  // Strategy: scale so the whole tree fits with padding, then translate so the FOCUS person
+  // sits at the horizontal center of the viewport and at a vertically-pleasing position
+  // (centered for hourglass; near the top for descendant view; near the bottom for pedigree).
+  const pane = document.getElementById('tree-pane');
+  const W = pane.clientWidth, H = pane.clientHeight;
+  const treeW = maxX - minX, treeH = maxY - minY;
+  if (state._needsFit){
+    const PAD = 30;
+    const sx = (W - PAD*2) / Math.max(1, treeW);
+    const sy = (H - PAD*2) / Math.max(1, treeH);
+    view.scale = Math.min(1, Math.min(sx, sy));
+    // Try to anchor focus at viewport center, then clamp so the whole tree stays visible.
+    const focus = positions.get(state.focusId);
+    let txWanted, tyWanted;
+    if (focus){
+      const fx = focus.x + BOX_W/2, fy = focus.y + BOX_H/2;
+      const focusFy = state.view==='descendant' ? H * 0.22
+                    : state.view==='pedigree'   ? H * 0.78
+                    :                              H * 0.50;
+      txWanted = W/2 - fx * view.scale;
+      tyWanted = focusFy - fy * view.scale;
+    } else {
+      txWanted = (W - treeW*view.scale)/2 - minX*view.scale;
+      tyWanted = (H - treeH*view.scale)/2 - minY*view.scale;
+    }
+    // Clamp so tree edges stay within viewport (with padding).
+    // tLow = lower bound on tx (tree-left at PAD), tHigh = upper bound (tree-right at W-PAD).
+    const txLow = PAD - minX * view.scale;
+    const txHigh = (W - PAD) - maxX * view.scale;
+    const tyLow = PAD - minY * view.scale;
+    const tyHigh = (H - PAD) - maxY * view.scale;
+    // If tree fits (low<=high): clamp wanted into [low, high]. Else (tree larger than
+    // viewport): keep wanted so the focus stays where requested, accepting overflow.
+    view.tx = (txLow <= txHigh) ? Math.max(txLow, Math.min(txHigh, txWanted)) : txWanted;
+    view.ty = (tyLow <= tyHigh) ? Math.max(tyLow, Math.min(tyHigh, tyWanted)) : tyWanted;
+    state._needsFit = false;
+  }
+
+  // Build SVG content
+  let parts = [];
+  parts.push(`<g id="root" transform="translate(${view.tx},${view.ty}) scale(${view.scale})">`);
+  // Edges first (under boxes)
+  for (const e of lay.parentEdges){
+    const a = lay.keyed ? positions.get(e.fromKey) : positions.get(e.from);
+    const b = lay.keyed ? positions.get(e.toKey) : positions.get(e.to);
+    if (!a || !b) continue;
+    const x1 = a.x + BOX_W/2, y1 = a.y + BOX_H;
+    const x2 = b.x + BOX_W/2, y2 = b.y;
+    const my = (y1 + y2)/2;
+    parts.push(`<path class="link" d="M${x1},${y1} L${x1},${my} L${x2},${my} L${x2},${y2}"/>`);
+  }
+  for (const [a,b] of lay.spouseEdges){
+    const na = positions.get(a), nb = positions.get(b);
+    if (!na || !nb) continue;
+    const y = na.y + BOX_H/2;
+    const x1 = na.x + BOX_W, x2 = nb.x;
+    if (x1 < x2) parts.push(`<line class="link spouse" x1="${x1}" y1="${y}" x2="${x2}" y2="${y}"/>`);
+    else parts.push(`<line class="link spouse" x1="${nb.x+BOX_W}" y1="${y}" x2="${na.x}" y2="${y}"/>`);
+  }
+  // Boxes
+  for (const [, n] of positions){
+    const p = state.g.getPerson ? state.g.getPerson(n.id) : state.g.persons.get(n.id);
+    if (!p) continue;
+    const sex = state.g.sex(p);
+    const cls = ['person-box', sex==='M'?'male':sex==='F'?'female':'', n.id===state.focusId?'focus':''].join(' ');
+    const name = escapeXml(state.g.fullName(p));
+    const by = state.g.birthYear(p), dy = state.g.deathYear(p);
+    const dates = (by||dy) ? `${by||'?'}–${dy||''}` : '';
+    parts.push(`<g class="${cls}" data-id="${n.id}" data-key="${n.key||n.id}" transform="translate(${n.x},${n.y})">`);
+    parts.push(`<rect width="${BOX_W}" height="${BOX_H}"/>`);
+    parts.push(`<text class="pname" x="${BOX_W/2}" y="20" text-anchor="middle">${truncate(name, 22)}</text>`);
+    parts.push(`<text class="pdates" x="${BOX_W/2}" y="38" text-anchor="middle">${dates}</text>`);
+    parts.push(`</g>`);
+  }
+  parts.push(`</g>`);
+  svg.innerHTML = parts.join('');
+
+  // Click handling on persons
+  for (const el of svg.querySelectorAll('.person-box')){
+    el.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      const id = el.getAttribute('data-id');
+      if (id !== state.focusId){
+        state.focusId = id;
+        state._needsFit = true;
+        render();
+      } else {
+        renderEditor();
+      }
+      if (isMobile()) showMobileSheet();
+    });
+  }
+}
+function isMobile(){ return window.matchMedia('(max-width:768px)').matches; }
+function showMobileSheet(){
+  if (!isMobile()) return;
+  document.getElementById('editor').classList.add('mobile-open');
+  document.getElementById('editor-backdrop').classList.add('mobile-open');
+}
+function hideMobileSheet(){
+  document.getElementById('editor').classList.remove('mobile-open');
+  document.getElementById('editor-backdrop').classList.remove('mobile-open');
+}
+function escapeXml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function truncate(s, n){ return s.length > n ? s.slice(0,n-1)+'…' : s; }
+
+// Pan & zoom handlers
+function setupPanZoom(){
+  const svg = document.getElementById('tree-svg');
+  let dragging = false, sx=0, sy=0, ox=0, oy=0;
+  svg.addEventListener('mousedown', (e) => {
+    if (e.target.closest('.person-box')) return;
+    dragging = true; sx=e.clientX; sy=e.clientY; ox=view.tx; oy=view.ty;
+    svg.classList.add('dragging');
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    view.tx = ox + (e.clientX - sx);
+    view.ty = oy + (e.clientY - sy);
+    updateTreeTransform();
+  });
+  window.addEventListener('mouseup', () => { dragging=false; svg.classList.remove('dragging'); });
+  svg.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const rect = svg.getBoundingClientRect();
+    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    const factor = Math.exp(-e.deltaY * 0.0015);
+    const newScale = Math.max(0.15, Math.min(3, view.scale * factor));
+    // Zoom around mouse pointer
+    view.tx = mx - (mx - view.tx) * (newScale / view.scale);
+    view.ty = my - (my - view.ty) * (newScale / view.scale);
+    view.scale = newScale;
+    updateTreeTransform();
+  }, { passive:false });
+  // Touch / pinch
+  let touchStart=null;
+  svg.addEventListener('touchstart', (e) => {
+    if (e.touches.length===1 && !e.target.closest('.person-box')){
+      touchStart = {kind:'pan',x:e.touches[0].clientX,y:e.touches[0].clientY,tx:view.tx,ty:view.ty};
+    } else if (e.touches.length===2){
+      const dx=e.touches[0].clientX-e.touches[1].clientX, dy=e.touches[0].clientY-e.touches[1].clientY;
+      touchStart = {kind:'pinch', dist: Math.hypot(dx,dy), scale: view.scale,
+        cx:(e.touches[0].clientX+e.touches[1].clientX)/2, cy:(e.touches[0].clientY+e.touches[1].clientY)/2,
+        tx:view.tx, ty:view.ty};
+    }
+  });
+  svg.addEventListener('touchmove', (e) => {
+    if (!touchStart) return;
+    e.preventDefault();
+    if (touchStart.kind==='pan' && e.touches.length===1){
+      view.tx = touchStart.tx + (e.touches[0].clientX - touchStart.x);
+      view.ty = touchStart.ty + (e.touches[0].clientY - touchStart.y);
+    } else if (touchStart.kind==='pinch' && e.touches.length===2){
+      const dx=e.touches[0].clientX-e.touches[1].clientX, dy=e.touches[0].clientY-e.touches[1].clientY;
+      const d = Math.hypot(dx,dy);
+      const factor = d / touchStart.dist;
+      const newScale = Math.max(0.15, Math.min(3, touchStart.scale * factor));
+      const rect = svg.getBoundingClientRect();
+      const mx = touchStart.cx - rect.left, my = touchStart.cy - rect.top;
+      view.tx = mx - (mx - touchStart.tx) * (newScale / touchStart.scale);
+      view.ty = my - (my - touchStart.ty) * (newScale / touchStart.scale);
+      view.scale = newScale;
+    }
+    updateTreeTransform();
+  }, {passive:false});
+  svg.addEventListener('touchend', () => { touchStart=null; });
+}
+function updateTreeTransform(){
+  const root = document.querySelector('#tree-svg #root');
+  if (root) root.setAttribute('transform', `translate(${view.tx},${view.ty}) scale(${view.scale})`);
+}
+
+// ============================================================================
+// EDITOR PANEL
+// ============================================================================
+function renderEditor(){
+  const ed = document.getElementById('editor');
+  if (!state.g || !state.focusId){
+    ed.innerHTML = `<div class="empty">${escapeHtml(t('selectPerson'))}</div>`;
+    return;
+  }
+  const p = state.g.persons.get(state.focusId);
+  if (!p){ ed.innerHTML=`<div class="empty">?</div>`; return; }
+  const id = state.focusId;
+  const events = state.g.events(p);
+  const parents = state.g.parentsOf(id);
+  const spouses = state.g.spousesOf(id);
+  const children = state.g.childrenOf(id);
+  // Build editor HTML
+  const eventTypes = ['BIRT','DEAT','BURI','CHR','OCCU','EDUC','EMIG','IMMI','PHOT','NOTE','NAME','FAMT'];
+  // Find first PHOT/PHOTO with a filename — show it big at the top
+  const photoEv = events.find(e => (e.tag==='PHOT'||e.tag==='PHOTO') && e.mediafilename);
+  const primaryPhotoHtml = photoEv
+    ? `<div class="primary-photo-wrap"><div class="primary-photo" data-file="${escapeAttr(photoEv.mediafilename)}"></div></div>`
+    : '';
+  const html = `
+    <div class="editor-close-btn">
+      <span class="name">${escapeHtml(state.g.fullName(p))}</span>
+      <button id="btn-editor-close" title="Close">✕</button>
+    </div>
+    <div>
+      ${primaryPhotoHtml}
+      <h3>${escapeHtml(state.g.fullName(p))} <span style="color:var(--muted);font-weight:400;font-size:12px">(${escapeHtml(id)})</span></h3>
+      <div class="row" style="margin-top:8px">
+        <div class="field"><label>${escapeHtml(t('givenname'))}</label>
+          <input type="text" id="f-given" value="${escapeAttr(state.g.givenname(p))}"></div>
+        <div class="field"><label>${escapeHtml(t('surname'))}</label>
+          <input type="text" id="f-surname" value="${escapeAttr(state.g.surname(p))}"></div>
+      </div>
+      <div class="field" style="margin-top:6px"><label>${escapeHtml(t('sex'))}</label>
+        <select id="f-sex">
+          <option value="M" ${state.g.sex(p)==='M'?'selected':''}>${escapeHtml(t('male'))}</option>
+          <option value="F" ${state.g.sex(p)==='F'?'selected':''}>${escapeHtml(t('female'))}</option>
+          <option value="" ${!state.g.sex(p)?'selected':''}>${escapeHtml(t('unknown'))}</option>
+        </select>
+      </div>
+    </div>
+
+    <section>
+      <header><h4>${escapeHtml(t('eventsHeader'))}</h4></header>
+      <div class="add-event-row">
+        <select id="f-add-event-type">
+          ${eventTypes.map(et=>`<option value="${et}">${escapeHtml(t(et))}</option>`).join('')}
+        </select>
+        <button id="btn-add-event" class="primary">+ ${escapeHtml(t('addEvent'))}</button>
+      </div>
+      ${events.length===0 ? `<div class="empty" style="padding:8px">${escapeHtml(t('noEvents'))}</div>` : ''}
+      ${events.map((ev, idx) => renderEvent(ev, idx)).join('')}
+    </section>
+
+    <section>
+      <header><h4>${escapeHtml(t('relationsHeader'))}</h4></header>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:4px">${escapeHtml(t('parents'))}</div>
+      <div class="relation-list">
+        ${parents.map(pid => personLink(pid, 'parent')).join('') || `<div class="empty" style="padding:4px">—</div>`}
+        <button class="icon-btn" data-action="add-parent">+ ${escapeHtml(t('addParent'))}</button>
+      </div>
+      <div style="font-size:12px;color:var(--muted);margin:8px 0 4px">${escapeHtml(t('spouses'))}</div>
+      <div class="relation-list">
+        ${spouses.map(sp => personLink(sp.id, 'spouse', sp.node)).join('') || `<div class="empty" style="padding:4px">—</div>`}
+        <button class="icon-btn" data-action="add-spouse">+ ${escapeHtml(t('addSpouse'))}</button>
+      </div>
+      <div style="font-size:12px;color:var(--muted);margin:8px 0 4px">${escapeHtml(t('children'))}</div>
+      <div class="relation-list">
+        ${children.map(cid => personLink(cid, 'child')).join('') || `<div class="empty" style="padding:4px">—</div>`}
+        <button class="icon-btn" data-action="add-child">+ ${escapeHtml(t('addChild'))}</button>
+      </div>
+    </section>
+
+    <div>
+      <button class="danger" id="btn-remove-person">${escapeHtml(t('removePerson'))}</button>
+    </div>
+  `;
+  ed.innerHTML = html;
+
+  // Wire up edits
+  function bindText(id, fn){
+    const el = document.getElementById(id);
+    if (!el) return;
+    let original = el.value;
+    el.addEventListener('focus', () => { original = el.value; });
+    el.addEventListener('change', () => {
+      if (el.value === original) return;
+      pushUndo();
+      fn(el.value);
+      original = el.value;
+      // Re-render tree (names changed) but not the editor (would lose focus)
+      renderTree();
+    });
+  }
+  // Mobile close button
+  const closeBtn = document.getElementById('btn-editor-close');
+  if (closeBtn) closeBtn.addEventListener('click', hideMobileSheet);
+  bindText('f-given', v => state.g.setGivenname(p, v));
+  bindText('f-surname', v => state.g.setSurname(p, v));
+  document.getElementById('f-sex').addEventListener('change', (e) => {
+    pushUndo();
+    state.g.setSex(p, e.target.value);
+    renderTree();
+  });
+  document.getElementById('btn-add-event').addEventListener('click', () => {
+    const tag = document.getElementById('f-add-event-type').value;
+    pushUndo();
+    state.g.addEvent(id, {tag});
+    renderEditor();
+  });
+  document.getElementById('btn-remove-person').addEventListener('click', () => {
+    const n = parents.length + spouses.length + children.length;
+    confirmModal(t('confirmDeleteTitle'), t('confirmDeleteBody', {name: state.g.fullName(p), n})).then(ok => {
+      if (!ok) return;
+      pushUndo();
+      const fallback = parents[0] || children[0] || (spouses[0] && spouses[0].id) || state.g.persons.keys().next().value;
+      state.g.removePerson(id);
+      state.focusId = fallback || null;
+      state._needsFit = true;
+      render();
+    });
+  });
+  // Per-event wiring
+  for (const evWrap of ed.querySelectorAll('.event')){
+    const idx = +evWrap.getAttribute('data-idx');
+    const ev = events[idx];
+    function bindEvField(field, key){
+      const el = evWrap.querySelector('[data-field='+field+']');
+      if (!el) return;
+      let original = el.value;
+      el.addEventListener('change', () => {
+        if (el.value === original) return;
+        pushUndo();
+        const upd = {}; upd[key] = el.value;
+        state.g.updateEvent(ev.node, upd);
+        original = el.value;
+        renderTree();
+      });
+    }
+    bindEvField('date','date');
+    bindEvField('place','place');
+    bindEvField('description','description');
+    bindEvField('notetext','notetext');
+    bindEvField('mediafilename','mediafilename');
+    bindEvField('mediatitle','mediatitle');
+    bindEvField('nameGiven','nameGiven');
+    bindEvField('nameSurname','nameSurname');
+    const rm = evWrap.querySelector('.event-remove');
+    if (rm) rm.addEventListener('click', () => {
+      pushUndo();
+      state.g.removeEvent(id, ev.node);
+      renderEditor();
+      renderTree();
+    });
+  }
+  // Relation actions
+  for (const a of ed.querySelectorAll('[data-action]')){
+    a.addEventListener('click', (e) => {
+      handleAddRelation(a.getAttribute('data-action'), id, e.currentTarget);
+    });
+  }
+  for (const a of ed.querySelectorAll('.relation-item .name')){
+    a.addEventListener('click', () => {
+      state.focusId = a.getAttribute('data-id');
+      state._needsFit = true;
+      render();
+    });
+  }
+  for (const a of ed.querySelectorAll('.relation-item .unlink')){
+    a.addEventListener('click', () => {
+      const otherId = a.getAttribute('data-other');
+      const kind = a.getAttribute('data-kind');
+      pushUndo();
+      // Find the relation
+      let r;
+      if (kind==='spouse') r = state.g.findRelation(rr => rr.attr('tag')==='MARR' && ((rr.attr('unitida')===id && rr.attr('unitidb')===otherId)||(rr.attr('unitida')===otherId && rr.attr('unitidb')===id)));
+      if (kind==='parent') r = state.g.findRelation(rr => rr.attr('tag')==='CHIL' && rr.attr('unitida')===otherId && rr.attr('unitidb')===id);
+      if (kind==='child') r = state.g.findRelation(rr => rr.attr('tag')==='CHIL' && rr.attr('unitida')===id && rr.attr('unitidb')===otherId);
+      if (r) state.g.removeRelation(r);
+      renderEditor(); renderTree();
+    });
+  }
+}
+function renderEvent(ev, idx){
+  const tag = ev.tag;
+  const isPhoto = tag==='PHOT'||tag==='PHOTO';
+  const isNote = tag==='NOTE';
+  const isName = tag==='NAME';
+  let nameBlock = '';
+  if (isName){
+    nameBlock = `<div class="row3">
+      <div class="field"><label>${escapeHtml(t('givenname'))}</label>
+        <input type="text" data-field="nameGiven" value="${escapeAttr(ev.nameGiven||'')}"></div>
+      <div class="field"><label>${escapeHtml(t('surname'))}</label>
+        <input type="text" data-field="nameSurname" value="${escapeAttr(ev.nameSurname||'')}"></div>
+    </div>
+    <div class="row3" style="margin-top:6px">
+      <div class="field"><label>${escapeHtml(t('eventDate'))}</label>
+        <input type="text" data-field="date" value="${escapeAttr(ev.date||'')}" placeholder="YYYYMMDD"></div>
+      <div class="field"><label>${escapeHtml(t('eventPlace'))}</label>
+        <input type="text" data-field="place" value="${escapeAttr(ev.place||'')}"></div>
+    </div>`;
+  }
+  let photoBlock = '';
+  if (isPhoto){
+    photoBlock = `<div class="row3" style="margin-top:6px">
+      <div class="field"><label>${escapeHtml(t('eventMediaFile'))}</label>
+        <input type="text" data-field="mediafilename" value="${escapeAttr(ev.mediafilename||'')}"></div>
+      <div class="field"><label>${escapeHtml(t('eventMediaTitle'))}</label>
+        <input type="text" data-field="mediatitle" value="${escapeAttr(ev.mediatitle||'')}"></div>
+    </div>
+    <div class="photo-preview" data-file="${escapeAttr(ev.mediafilename||'')}"></div>`;
+  }
+  let dateBlock = '';
+  if (!isPhoto && !isNote && !isName){
+    dateBlock = `<div class="row3">
+      <div class="field"><label>${escapeHtml(t('eventDate'))}</label>
+        <input type="text" data-field="date" value="${escapeAttr(ev.date||'')}" placeholder="YYYYMMDD"></div>
+      <div class="field"><label>${escapeHtml(t('eventPlace'))}</label>
+        <input type="text" data-field="place" value="${escapeAttr(ev.place||'')}"></div>
+    </div>`;
+  }
+  let descBlock = '';
+  if (tag==='OCCU'||tag==='EDUC'||tag==='FAMT'){
+    descBlock = `<div class="field" style="margin-top:6px"><label>${escapeHtml(t('eventDescription'))}</label>
+      <textarea data-field="description">${escapeHtml(ev.description||'')}</textarea></div>`;
+  }
+  let noteBlock = '';
+  if (isNote){
+    noteBlock = `<div class="field"><label>${escapeHtml(t('eventNote'))}</label>
+      <textarea data-field="notetext">${escapeHtml(ev.notetext||'')}</textarea></div>`;
+  }
+  return `<div class="event" data-idx="${idx}">
+    <header><span class="tag">${escapeHtml(t(tag)||tag)}</span>
+      <button class="event-remove icon-btn">×</button></header>
+    ${nameBlock}${dateBlock}${descBlock}${noteBlock}${photoBlock}
+  </div>`;
+}
+function personLink(id, kind, relNode){
+  const p = state.g.persons.get(id);
+  if (!p) return `<div class="relation-item"><span style="color:var(--muted)">? ${escapeHtml(id)}</span></div>`;
+  const by = state.g.birthYear(p), dy = state.g.deathYear(p);
+  const dates = (by||dy) ? ` (${by||'?'}${dy?'–'+dy:''})` : '';
+  return `<div class="relation-item">
+    <a class="name" data-id="${escapeAttr(id)}">${escapeHtml(state.g.fullName(p))}<span style="color:var(--muted);font-weight:400">${escapeHtml(dates)}</span></a>
+    <div class="actions">
+      <button class="unlink" data-other="${escapeAttr(id)}" data-kind="${escapeAttr(kind)}" title="unlink">×</button>
+    </div>
+  </div>`;
+}
+function escapeHtml(s){return String(s).replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+function escapeAttr(s){return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+
+// ============================================================================
+// ADD RELATION FLOW
+// ============================================================================
+function handleAddRelation(action, focusId, anchor){
+  // Show menu: pick existing OR create new
+  closeMenus();
+  const m = document.createElement('div');
+  m.className = 'add-person-menu';
+  const r = anchor.getBoundingClientRect();
+  m.style.top = (r.bottom + 4) + 'px';
+  m.style.left = r.left + 'px';
+  m.innerHTML = `<button data-pick="existing">${escapeHtml(t('pickExisting'))}</button>
+                 <button data-pick="new">${escapeHtml(t('createNew'))}</button>`;
+  document.body.appendChild(m);
+  m.addEventListener('click', (e) => {
+    const pick = e.target.getAttribute('data-pick');
+    closeMenus();
+    if (pick==='existing') pickPersonModal().then(otherId => { if (otherId) doAddRelation(action, focusId, otherId); });
+    else if (pick==='new') createPersonModal(action).then(opts => { if (!opts) return;
+      pushUndo();
+      const p = state.g.addPerson(opts);
+      const newId = state.g.unitid(p);
+      doAddRelation(action, focusId, newId, true);
+    });
+  });
+  setTimeout(() => {
+    const off = (e) => { if (!m.contains(e.target)) { closeMenus(); document.removeEventListener('click', off); } };
+    document.addEventListener('click', off);
+  }, 0);
+}
+function closeMenus(){ for (const el of document.querySelectorAll('.add-person-menu')) el.remove(); }
+
+function doAddRelation(action, focusId, otherId, alreadyPushed){
+  if (!alreadyPushed) pushUndo();
+  if (action==='add-parent') state.g.addRelation({tag:'CHIL', parentId: otherId, childId: focusId});
+  else if (action==='add-child') state.g.addRelation({tag:'CHIL', parentId: focusId, childId: otherId});
+  else if (action==='add-spouse') state.g.addRelation({tag:'MARR', spouseAId: focusId, spouseBId: otherId});
+  renderEditor(); renderTree();
+}
+
+// ============================================================================
+// MODALS
+// ============================================================================
+function confirmModal(title, body){
+  return new Promise(resolve => {
+    const bg = document.createElement('div');
+    bg.className = 'modal-bg';
+    bg.innerHTML = `<div class="modal">
+      <h3>${escapeHtml(title)}</h3>
+      <div>${escapeHtml(body)}</div>
+      <div class="actions">
+        <button data-act="cancel">${escapeHtml(t('cancel'))}</button>
+        <button data-act="ok" class="danger">${escapeHtml(t('confirmDeleteOk'))}</button>
+      </div></div>`;
+    document.body.appendChild(bg);
+    bg.addEventListener('click', (e) => {
+      if (e.target===bg || e.target.dataset.act==='cancel'){ bg.remove(); resolve(false); }
+      else if (e.target.dataset.act==='ok'){ bg.remove(); resolve(true); }
+    });
+  });
+}
+function createPersonModal(actionHint){
+  return new Promise(resolve => {
+    const bg = document.createElement('div');
+    bg.className = 'modal-bg';
+    const defaultSex = actionHint==='add-spouse' ? oppositeSex(state.g.sex(state.g.persons.get(state.focusId))) : 'M';
+    bg.innerHTML = `<div class="modal">
+      <h3>${escapeHtml(t('createNew'))}</h3>
+      <div class="field"><label>${escapeHtml(t('givenname'))}</label><input id="np-given" type="text"></div>
+      <div class="field" style="margin-top:8px"><label>${escapeHtml(t('surname'))}</label><input id="np-surname" type="text"></div>
+      <div class="field" style="margin-top:8px"><label>${escapeHtml(t('chooseSex'))}</label>
+        <select id="np-sex">
+          <option value="M" ${defaultSex==='M'?'selected':''}>${escapeHtml(t('male'))}</option>
+          <option value="F" ${defaultSex==='F'?'selected':''}>${escapeHtml(t('female'))}</option>
+        </select></div>
+      <div class="actions">
+        <button data-act="cancel">${escapeHtml(t('cancel'))}</button>
+        <button data-act="ok" class="primary">${escapeHtml(t('ok'))}</button>
+      </div></div>`;
+    document.body.appendChild(bg);
+    setTimeout(() => bg.querySelector('#np-given').focus(), 50);
+    bg.addEventListener('click', (e) => {
+      if (e.target===bg || e.target.dataset.act==='cancel'){ bg.remove(); resolve(null); }
+      else if (e.target.dataset.act==='ok'){
+        const opts = {givenname: bg.querySelector('#np-given').value.trim(),
+          surname: bg.querySelector('#np-surname').value.trim(),
+          sex: bg.querySelector('#np-sex').value};
+        bg.remove(); resolve(opts);
+      }
+    });
+    bg.addEventListener('keydown', (e) => {
+      if (e.key==='Enter') bg.querySelector('[data-act=ok]').click();
+      else if (e.key==='Escape') bg.querySelector('[data-act=cancel]').click();
+    });
+  });
+}
+function oppositeSex(s){return s==='M'?'F':s==='F'?'M':'M';}
+
+function pickPersonModal(){
+  return new Promise(resolve => {
+    const bg = document.createElement('div');
+    bg.className = 'modal-bg';
+    bg.innerHTML = `<div class="modal" style="min-width:400px">
+      <h3>${escapeHtml(t('pickPersonTitle'))}</h3>
+      <input type="search" id="pick-search" placeholder="${escapeAttr(t('search'))}" style="width:100%">
+      <div id="pick-results" style="max-height:300px;overflow-y:auto;margin-top:8px"></div>
+      <div class="actions"><button data-act="cancel">${escapeHtml(t('cancel'))}</button></div>
+    </div>`;
+    document.body.appendChild(bg);
+    const sInput = bg.querySelector('#pick-search');
+    const results = bg.querySelector('#pick-results');
+    function refresh(){
+      const q = sInput.value.trim().toLowerCase();
+      const list = [];
+      for (const [id, p] of state.g.persons){
+        const name = state.g.fullName(p);
+        if (!q || name.toLowerCase().includes(q)) list.push({id, name, by: state.g.birthYear(p), dy: state.g.deathYear(p)});
+        if (list.length > 40) break;
+      }
+      results.innerHTML = list.map(x => `<div class="item" data-id="${escapeAttr(x.id)}">
+        <div>${escapeHtml(x.name)}</div>
+        <div class="sub">${x.id} · ${x.by||'?'}${x.dy?'–'+x.dy:''}</div></div>`).join('') || `<div class="empty">${escapeHtml(t('noResults'))}</div>`;
+      // Style for items inside this modal:
+      results.querySelectorAll('.item').forEach(it => {
+        it.style.padding='6px 10px'; it.style.cursor='pointer'; it.style.borderBottom='1px solid var(--line)';
+        it.querySelector('.sub').style.fontSize='11px'; it.querySelector('.sub').style.color='var(--muted)';
+        it.addEventListener('mouseenter', ()=>it.style.background='var(--soft2)');
+        it.addEventListener('mouseleave', ()=>it.style.background='');
+        it.addEventListener('click', () => { bg.remove(); resolve(it.getAttribute('data-id')); });
+      });
+    }
+    sInput.addEventListener('input', refresh);
+    refresh();
+    setTimeout(()=>sInput.focus(),50);
+    bg.addEventListener('click', (e) => {
+      if (e.target===bg || e.target.dataset.act==='cancel'){ bg.remove(); resolve(null); }
+    });
+  });
+}
+
+// ============================================================================
+// SEARCH (toolbar dropdown)
+// ============================================================================
+function setupSearch(){
+  const inp = document.getElementById('search');
+  const out = document.getElementById('search-results');
+  let sel = -1;
+  let lastList = [];
+  function position(){
+    const r = inp.getBoundingClientRect();
+    out.style.top = (r.bottom + 4) + 'px';
+    out.style.left = r.left + 'px';
+    out.style.minWidth = Math.max(300, r.width) + 'px';
+    // Use almost all the space below the search input, with a small margin
+    const avail = Math.max(120, window.innerHeight - r.bottom - 16);
+    out.style.maxHeight = avail + 'px';
+  }
+  function show(){ position(); out.style.display = 'block'; }
+  function hide(){ out.style.display = 'none'; }
+  function refresh(){
+    const q = inp.value.trim().toLowerCase();
+    if (!q || !state.g){ hide(); return; }
+    const list = [];
+    for (const [id, p] of state.g.persons){
+      const name = state.g.fullName(p);
+      if (name.toLowerCase().includes(q)){
+        list.push({id, name, by: state.g.birthYear(p), dy: state.g.deathYear(p)});
+        if (list.length >= 50) break;
+      }
+    }
+    lastList = list;
+    if (list.length === 0){
+      out.innerHTML = `<div class="item">${escapeHtml(t('noResults'))}</div>`;
+      show(); return;
+    }
+    out.innerHTML = list.map((x,i) => `<div class="item${i===sel?' sel':''}" data-id="${escapeAttr(x.id)}">
+      <div>${escapeHtml(x.name)}</div>
+      <div class="sub">${x.id} · ${x.by||'?'}${x.dy?'–'+x.dy:''}</div></div>`).join('');
+    show();
+    out.querySelectorAll('.item').forEach(it => it.addEventListener('click', () => {
+      const id = it.getAttribute('data-id'); if (!id) return;
+      state.focusId = id; state._needsFit = true; render(); inp.value=''; hide();
+    }));
+    // Scroll selected into view if any
+    const selEl = out.querySelector('.item.sel');
+    if (selEl) selEl.scrollIntoView({block:'nearest'});
+  }
+  inp.addEventListener('input', () => { sel=-1; refresh(); });
+  inp.addEventListener('focus', () => { if (inp.value.trim()) refresh(); });
+  inp.addEventListener('keydown', (e) => {
+    if (out.style.display==='none') return;
+    if (e.key==='ArrowDown'){ sel = Math.min(lastList.length-1, sel+1); refresh(); e.preventDefault(); }
+    else if (e.key==='ArrowUp'){ sel = Math.max(-1, sel-1); refresh(); e.preventDefault(); }
+    else if (e.key==='Enter' && sel>=0){
+      state.focusId = lastList[sel].id; state._needsFit = true; render(); inp.value=''; hide(); e.preventDefault();
+    } else if (e.key==='Escape'){ inp.value=''; hide(); }
+  });
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('#search') && !e.target.closest('#search-results')) hide();
+  });
+  // Reposition on window resize / scroll
+  window.addEventListener('resize', () => { if (out.style.display!=='none') position(); });
+  window.addEventListener('scroll', () => { if (out.style.display!=='none') position(); }, true);
+}
+
+// ============================================================================
+// FILE OPS
+// ============================================================================
+function canSaveDirect(){ return 'showSaveFilePicker' in window; }
+
+async function openFile(){
+  if (await maybeDiscard() === false) return;
+  if ('showOpenFilePicker' in window){
+    try {
+      const [handle] = await window.showOpenFilePicker({
+        types: [{description:'Genealogy XML', accept:{'text/xml':['.xml']}}]
+      });
+      const file = await handle.getFile();
+      const text = await file.text();
+      loadXml(text, file.name);
+      state.fileHandle = handle;
+    } catch(e){ if (e.name!=='AbortError') console.error(e); }
+  } else {
+    document.getElementById('file-input').click();
+  }
+}
+async function maybeDiscard(){
+  if (!state.dirty) return true;
+  return new Promise(resolve => {
+    const bg = document.createElement('div'); bg.className='modal-bg';
+    bg.innerHTML = `<div class="modal"><h3>${escapeHtml(t('confirmDiscard'))}</h3>
+      <div class="actions">
+        <button data-act="cancel">${escapeHtml(t('cancel'))}</button>
+        <button data-act="ok" class="danger">${escapeHtml(t('discard'))}</button>
+      </div></div>`;
+    document.body.appendChild(bg);
+    bg.addEventListener('click', e => {
+      if (e.target===bg||e.target.dataset.act==='cancel'){ bg.remove(); resolve(false); }
+      else if (e.target.dataset.act==='ok'){ bg.remove(); resolve(true); }
+    });
+  });
+}
+
+function loadXml(text, name){
+  try {
+    state.g = new Genealog(parseXml(text));
+    state.filename = name || 'family.xml';
+    state.focusId = state.g.persons.keys().next().value || null;
+    state.undoStack.length = 0;
+    state.redoStack.length = 0;
+    state._needsFit = true;
+    state.savedSnapshot = snapshot();
+    state.dirty = false;
+    render();
+    toast(t('fileLoaded'));
+    sessionStorage.removeItem('photoHintDismissed');
+    setTimeout(maybeShowPhotoHint, 300);
+  } catch(e){
+    alert('Parse error: '+e.message);
+    console.error(e);
+  }
+}
+async function saveFile(saveAs){
+  if (!state.g) return;
+  const text = serializeXml(state.g.parsed);
+  if (canSaveDirect()){
+    try {
+      let handle = state.fileHandle;
+      if (saveAs || !handle){
+        handle = await window.showSaveFilePicker({
+          suggestedName: state.filename || 'family.xml',
+          types:[{description:'Genealogy XML', accept:{'text/xml':['.xml']}}]
+        });
+      }
+      const ws = await handle.createWritable();
+      await ws.write(new Blob([text], {type:'text/xml'}));
+      await ws.close();
+      state.fileHandle = handle;
+      state.filename = handle.name;
+      markSaved(); render(); toast(t('saved'));
+    } catch(e){ if (e.name!=='AbortError'){ alert(t('saveError')+': '+e.message); console.error(e); } }
+  } else {
+    // Fallback download
+    const blob = new Blob([text], {type:'text/xml;charset=utf-8'});
+    const a = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    a.href = url; a.download = saveAs ? promptName(state.filename||'family.xml') : (state.filename||'family.xml');
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url), 1000);
+    markSaved(); render(); toast(t('saved'));
+  }
+}
+function promptName(def){ const n = prompt('Save as', def); return n || def; }
+function newFile(){
+  if (!confirmDirty()) return;
+  // Empty genealog template (matches original structure with empty owner)
+  const tmpl = `<?xml version="1.0" encoding="utf-8"?><genealog><owner><ownername/><address><street/><postalcode/><postoffice/><country/><email/></address><mediapath/></owner><units></units><relations></relations><groups></groups><views></views><reports></reports><conversions></conversions></genealog>`;
+  loadXml(tmpl, t('untitledFile')+'.xml');
+  // Add one starter person so the tree isn't empty
+  const p = state.g.addPerson({givenname:'', surname:'', sex:'M'});
+  state.focusId = state.g.unitid(p);
+  state.undoStack.length=0; state.redoStack.length=0;
+  state.savedSnapshot = snapshot();
+  state.dirty = false;
+  render();
+}
+function confirmDirty(){ if (!state.dirty) return true; return confirm(t('unsavedWarning')); }
+
+// ============================================================================
+// PHOTO LOADING (best-effort: works with directory handle in browser)
+// ============================================================================
+const photoCache = new Map(); // filename -> URL or '__missing__'
+async function loadPhotos(){
+  if (!state.photoDirHandle) return; // Electron has its own override below
+  for (const el of document.querySelectorAll('.photo-preview, .primary-photo')){
+    const fname = el.getAttribute('data-file'); if (!fname) continue;
+    const isPrimary = el.classList.contains('primary-photo');
+    const cls = isPrimary ? 'photo-large' : 'photo-thumb';
+    const cached = photoCache.get(fname);
+    if (cached === '__missing__'){ el.innerHTML = isPrimary ? '' : `<div class="missing-photo">${escapeHtml(t('photoMissing',{file:fname}))}</div>`; continue; }
+    if (cached){ el.innerHTML = `<img src="${cached}" class="${cls}">`; continue; }
+    try {
+      // Try the explicit photo dir, then a `kuvat` subfolder if present
+      let fh;
+      try { fh = await state.photoDirHandle.getFileHandle(fname); }
+      catch {
+        try {
+          const sub = await state.photoDirHandle.getDirectoryHandle('kuvat');
+          fh = await sub.getFileHandle(fname);
+        } catch { throw new Error('not found'); }
+      }
+      const file = await fh.getFile();
+      const url = URL.createObjectURL(file);
+      photoCache.set(fname, url);
+      el.innerHTML = `<img src="${url}" class="${cls}">`;
+    } catch(e){
+      photoCache.set(fname, '__missing__');
+      el.innerHTML = isPrimary ? '' : `<div class="missing-photo">${escapeHtml(t('photoMissing',{file:fname}))}</div>`;
+    }
+  }
+}
+// Show a one-time hint banner when an XML has photo references but no folder is set.
+function maybeShowPhotoHint(){
+  if (window.electronAPI) return;                // Electron handles photos automatically
+  if (state.photoDirHandle) return;              // already chosen
+  if (!state.g) return;
+  if (sessionStorage.getItem('photoHintDismissed')) return;
+  // Does the XML reference any photos?
+  let hasPhoto = false;
+  for (const [, p] of state.g.persons){
+    for (const ev of state.g.events(p)){
+      if ((ev.tag==='PHOT'||ev.tag==='PHOTO') && ev.mediafilename){ hasPhoto = true; break; }
+    }
+    if (hasPhoto) break;
+  }
+  if (!hasPhoto) return;
+  // Remove any existing hint
+  const old = document.getElementById('photo-hint'); if (old) old.remove();
+  const banner = document.createElement('div');
+  banner.id = 'photo-hint';
+  banner.style.cssText = 'position:fixed;bottom:60px;left:50%;transform:translateX(-50%);background:#fff;border:1px solid var(--line);border-radius:8px;padding:10px 14px;box-shadow:var(--shadow);z-index:200;display:flex;gap:10px;align-items:center;max-width:90vw';
+  banner.innerHTML = `<span style="font-size:13px">📷 ${escapeHtml(t('photoHint'))}</span>
+    <button id="ph-yes" class="primary">${escapeHtml(t('photoHintBtn'))}</button>
+    <button id="ph-no" title="dismiss">×</button>`;
+  document.body.appendChild(banner);
+  banner.querySelector('#ph-yes').onclick = async () => {
+    banner.remove();
+    if (!('showDirectoryPicker' in window)){ alert(t('photoNotSupported')); return; }
+    await pickPhotoFolder();
+    photoCache.clear();
+    renderEditor();
+  };
+  banner.querySelector('#ph-no').onclick = () => {
+    banner.remove();
+    sessionStorage.setItem('photoHintDismissed', '1');
+  };
+}
+async function pickPhotoFolder(){
+  if (!('showDirectoryPicker' in window)) { alert(t('photoNotSupported')); return; }
+  try {
+    state.photoDirHandle = await window.showDirectoryPicker();
+    photoCache.clear();
+    toast(t('photoFolderSet',{p: state.photoDirHandle.name}));
+    renderEditor();
+  } catch(e){ if (e.name!=='AbortError') console.error(e); }
+}
+
+// ============================================================================
+// TOASTS / STATUS
+// ============================================================================
+function toast(msg){
+  const el = document.createElement('div'); el.className='toast'; el.textContent = msg;
+  document.body.appendChild(el); setTimeout(()=>el.remove(), 3200);
+}
+function renderStatus(){
+  const left = document.getElementById('status-left');
+  const right = document.getElementById('status-right');
+  if (state.g) left.textContent = `${state.g.persons.size} ${t('persons')}`;
+  else left.textContent = '';
+  document.getElementById('filename').textContent = state.filename || '';
+  right.textContent = t('keyboardHelp');
+}
+
+// ============================================================================
+// RENDER LOOP
+// ============================================================================
+function render(){
+  renderTree();
+  renderEditor();
+  renderStatus();
+  updateUndoButtons();
+  setDirty();
+  // Photos load async after editor render
+  loadPhotos();
+}
+
+// ============================================================================
+// INIT
+// ============================================================================
+function bindToolbar(){
+  document.getElementById('btn-new').addEventListener('click', newFile);
+  document.getElementById('btn-open').addEventListener('click', openFile);
+  document.getElementById('btn-open-empty').addEventListener('click', openFile);
+  document.getElementById('btn-save').addEventListener('click', () => saveFile(false));
+  document.getElementById('btn-saveas').addEventListener('click', () => saveFile(true));
+  document.getElementById('btn-undo').addEventListener('click', undo);
+  document.getElementById('btn-redo').addEventListener('click', redo);
+  document.getElementById('btn-add').addEventListener('click', () => {
+    if (!state.g) return;
+    createPersonModal('add').then(opts => {
+      if (!opts) return;
+      pushUndo();
+      const p = state.g.addPerson(opts);
+      state.focusId = state.g.unitid(p);
+      state._needsFit = true;
+      render();
+    });
+  });
+  document.getElementById('btn-view-hourglass').addEventListener('click', () => setView('hourglass'));
+  document.getElementById('btn-view-pedigree').addEventListener('click',  () => setView('pedigree'));
+  document.getElementById('btn-view-desc').addEventListener('click',      () => setView('descendant'));
+  document.getElementById('depth').addEventListener('input', (e) => {
+    const v = +e.target.value;
+    // At max position (10), treat as "show everything" — capped by data depth at runtime
+    state.depth = v >= 10 ? 99 : v;
+    document.getElementById('depth-val').textContent = v >= 10 ? (LANG==='fi'?'Max':'Max') : v;
+    state._needsFit = true; renderTree();
+  });
+  document.getElementById('btn-lang').addEventListener('click', () => {
+    LANG = LANG==='fi' ? 'en' : 'fi';
+    localStorage.setItem('lang', LANG);
+    applyI18n();
+  });
+  document.getElementById('btn-photos').addEventListener('click', async () => {
+    if (window.electronAPI){ await window.electronAPI.pickPhotoDir(); return; }
+    if (!('showDirectoryPicker' in window)){ alert(t('photoNotSupported')); return; }
+    await pickPhotoFolder();
+    photoCache.clear();
+    renderEditor();
+    maybeShowPhotoHint();
+  });
+  document.getElementById('file-input').addEventListener('change', async (e) => {
+    const f = e.target.files[0]; if (!f) return;
+    const text = await f.text();
+    loadXml(text, f.name);
+    e.target.value = '';
+  });
+  // Drag & drop
+  document.body.addEventListener('dragover', (e) => { e.preventDefault(); });
+  document.body.addEventListener('drop', async (e) => {
+    e.preventDefault();
+    const f = e.dataTransfer.files[0]; if (!f) return;
+    if (await maybeDiscard() === false) return;
+    const text = await f.text();
+    loadXml(text, f.name);
+  });
+  // Keyboard shortcuts
+  document.addEventListener('keydown', (e) => {
+    const isMod = e.metaKey || e.ctrlKey;
+    if (isMod && !e.shiftKey && e.key.toLowerCase()==='o'){ e.preventDefault(); openFile(); }
+    else if (isMod && !e.shiftKey && e.key.toLowerCase()==='s'){ e.preventDefault(); saveFile(false); }
+    else if (isMod && e.shiftKey && e.key.toLowerCase()==='s'){ e.preventDefault(); saveFile(true); }
+    else if (isMod && !e.shiftKey && e.key.toLowerCase()==='z'){ e.preventDefault(); undo(); }
+    else if ((isMod && e.shiftKey && e.key.toLowerCase()==='z') || (isMod && e.key.toLowerCase()==='y')){ e.preventDefault(); redo(); }
+    else if (isMod && e.key.toLowerCase()==='f'){ e.preventDefault(); document.getElementById('search').focus(); }
+  });
+  // Unsaved-changes guard
+  window.addEventListener('beforeunload', (e) => {
+    if (state.dirty){ e.preventDefault(); e.returnValue=''; }
+  });
+}
+function setView(v){
+  state.view = v; state._needsFit = true;
+  for (const id of ['btn-view-hourglass','btn-view-pedigree','btn-view-desc']) document.getElementById(id).classList.remove('primary');
+  if (v==='hourglass') document.getElementById('btn-view-hourglass').classList.add('primary');
+  if (v==='pedigree')  document.getElementById('btn-view-pedigree').classList.add('primary');
+  if (v==='descendant')document.getElementById('btn-view-desc').classList.add('primary');
+  renderTree();
+}
+
+function setupSplitter(){
+  let editorW = parseInt(localStorage.getItem('editorW') || '420', 10);
+  editorW = Math.max(280, Math.min(900, editorW));
+  document.documentElement.style.setProperty('--editor-w', editorW + 'px');
+  const splitter = document.getElementById('splitter');
+  let drag = null;
+  splitter.addEventListener('mousedown', (e) => {
+    drag = { startX: e.clientX, startW: editorW };
+    document.body.style.userSelect = 'none';
+    splitter.classList.add('dragging');
+    e.preventDefault();
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!drag) return;
+    // Editor is on the right; dragging left makes it wider
+    const newW = Math.max(280, Math.min(900, drag.startW - (e.clientX - drag.startX)));
+    if (newW !== editorW){
+      editorW = newW;
+      document.documentElement.style.setProperty('--editor-w', editorW + 'px');
+    }
+  });
+  window.addEventListener('mouseup', () => {
+    if (!drag) return;
+    drag = null;
+    document.body.style.userSelect = '';
+    splitter.classList.remove('dragging');
+    localStorage.setItem('editorW', editorW);
+    state._needsFit = true;
+    renderTree();
+  });
+  splitter.addEventListener('dblclick', () => {
+    editorW = 420;
+    document.documentElement.style.setProperty('--editor-w', editorW + 'px');
+    localStorage.setItem('editorW', editorW);
+    state._needsFit = true;
+    renderTree();
+  });
+}
+function init(){
+  applyI18n();
+  setupSplitter();
+  bindToolbar();
+  setupSearch();
+  setupPanZoom();
+  // Mobile sheet: backdrop tap dismisses
+  document.getElementById('editor-backdrop').addEventListener('click', hideMobileSheet);
+  // Resize handler — also clear sheet state when crossing the mobile/desktop boundary
+  window.addEventListener('resize', () => {
+    if (!isMobile()) hideMobileSheet();
+    state._needsFit = true;
+    renderTree();
+  });
+  // Tweak SVG touch defaults so panning doesn't cause page scroll/zoom
+  const svg = document.getElementById('tree-svg');
+  if (svg) svg.style.touchAction = 'none';
+  render();
+}
+init();
+
+// Expose for the Electron wrapper
+window.__app = {
+  loadXml, saveFile, openFile, newFile, undo, redo, state,
+  getXmlForSave: () => state.g ? serializeXml(state.g.parsed) : null,
+};
+
+// ============================================================================
+// ELECTRON BRIDGE (only active when running in Electron)
+// ============================================================================
+if (window.electronAPI){
+  // Override the open/save handlers to use native dialogs
+  const api = window.electronAPI;
+  // Replace openFile with the native version
+  document.getElementById('btn-open').onclick = () => api.open();
+  document.getElementById('btn-open-empty').onclick = () => api.open();
+  document.getElementById('btn-save').onclick = async () => { const ok = await api.save(); if (ok!==false) markSaved(); };
+  document.getElementById('btn-saveas').onclick = async () => { const ok = await api.saveAs(); if (ok!==false) markSaved(); };
+  // Listen for file events from main.
+  // CRITICAL: set __electronXmlDir BEFORE loadXml so the render() inside loadXml
+  // sees a valid dir and actually loads the primary photo on first open.
+  api.on('file:loaded', ({name, text, dir}) => {
+    window.__electronXmlDir = dir;
+    photoCache.clear();
+    loadXml(text, name);
+    state.fileHandle = { name, dir };
+  });
+  api.on('file:saved', () => { markSaved(); toast(t('saved')); });
+  api.on('menu:new', () => newFile());
+  api.on('menu:save', async () => { const ok = await api.save(); if (ok!==false) markSaved(); });
+  api.on('menu:saveas', async () => { const ok = await api.saveAs(); if (ok!==false) markSaved(); });
+  api.on('photodir:set', (dir) => { window.__electronPhotoBase = dir; photoCache.clear(); renderEditor(); });
+  // Notify main about dirty state
+  const _origSetDirty = setDirty;
+  window.setDirty = setDirty = function(){ _origSetDirty.apply(null, arguments); api.setDirty(state.dirty); };
+  // Photo loading override: ask main to find the photo (it knows xmlDir + kuvat fallbacks)
+  window.loadPhotos = loadPhotos = async function(){
+    if (!window.__electronXmlDir && !window.__electronPhotoBase) return;
+    for (const el of document.querySelectorAll('.photo-preview, .primary-photo')){
+      const fname = el.getAttribute('data-file'); if (!fname) continue;
+      const isPrimary = el.classList.contains('primary-photo');
+      const cls = isPrimary ? 'photo-large' : 'photo-thumb';
+      const cached = photoCache.get(fname);
+      if (cached === '__missing__'){ el.innerHTML = isPrimary ? '' : `<div class="missing-photo">${escapeHtml(t('photoMissing',{file:fname}))}</div>`; continue; }
+      if (cached){ el.innerHTML = `<img src="${cached}" class="${cls}">`; continue; }
+      const data = await api.readPhoto(fname);
+      if (data){
+        const url = `data:${data.mime};base64,${data.data}`;
+        photoCache.set(fname, url);
+        el.innerHTML = `<img src="${url}" class="${cls}">`;
+      } else {
+        photoCache.set(fname, '__missing__');
+        el.innerHTML = isPrimary ? '' : `<div class="missing-photo">${escapeHtml(t('photoMissing',{file:fname}))}</div>`;
+      }
+    }
+  };
+  // Keyboard shortcuts already work via menu accelerators; remove our own to avoid double handling
+}
+
+// ============================================================================
+// BROWSER PERSISTENCE (FileSystemFileHandle in IndexedDB) — Chromium-only
+// ============================================================================
+// In Electron, persistence is handled by main.js. In Chromium browsers we save the
+// FileSystemFileHandle and the photo-folder DirectoryHandle to IndexedDB so we can
+// restore them on next visit (subject to the user re-granting permission).
+const IDB_NAME='sukupuu-v1', IDB_STORE='handles';
+function _idb(){return new Promise((res,rej)=>{const r=indexedDB.open(IDB_NAME,1);r.onupgradeneeded=()=>r.result.createObjectStore(IDB_STORE);r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);});}
+async function idbGet(k){const db=await _idb();return new Promise((res,rej)=>{const t=db.transaction(IDB_STORE,'readonly');const r=t.objectStore(IDB_STORE).get(k);r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);});}
+async function idbSet(k,v){const db=await _idb();return new Promise((res,rej)=>{const t=db.transaction(IDB_STORE,'readwrite');t.objectStore(IDB_STORE).put(v,k);t.oncomplete=()=>res();t.onerror=()=>rej(t.error);});}
+async function idbDel(k){const db=await _idb();return new Promise((res,rej)=>{const t=db.transaction(IDB_STORE,'readwrite');t.objectStore(IDB_STORE).delete(k);t.oncomplete=()=>res();t.onerror=()=>rej(t.error);});}
+
+async function tryRestoreLastSession(){
+  if (window.electronAPI) return;            // Electron handles its own restore
+  if (!('showOpenFilePicker' in window)) return;  // Safari etc. can't persist handles
+  try {
+    const fileHandle = await idbGet('lastFile');
+    const dirHandle  = await idbGet('photoDir');
+    if (!fileHandle) return;
+    // Permission may need re-granting on each session
+    const fp = await fileHandle.queryPermission({mode:'read'});
+    if (fp === 'granted'){
+      const file = await fileHandle.getFile();
+      const text = await file.text();
+      loadXml(text, file.name);
+      state.fileHandle = fileHandle;
+    } else {
+      // Show a lightweight prompt — clicking re-grants permission
+      const banner = document.createElement('div');
+      banner.style.cssText='position:fixed;bottom:60px;left:50%;transform:translateX(-50%);background:#fff;border:1px solid var(--line);border-radius:8px;padding:10px 14px;box-shadow:var(--shadow);z-index:200;display:flex;gap:10px;align-items:center';
+      banner.innerHTML=`<span>${escapeHtml(LANG==='fi'?'Avataanko viimeinen tiedosto':'Reopen last file')}: <b>${escapeHtml(fileHandle.name)}</b>?</span><button id="rb-yes" class="primary">${escapeHtml(LANG==='fi'?'Avaa':'Open')}</button><button id="rb-no">${escapeHtml(LANG==='fi'?'Ei':'No')}</button>`;
+      document.body.appendChild(banner);
+      banner.querySelector('#rb-yes').onclick = async () => {
+        banner.remove();
+        const ok = (await fileHandle.requestPermission({mode:'read'})) === 'granted';
+        if (!ok) { idbDel('lastFile'); return; }
+        const file = await fileHandle.getFile();
+        const text = await file.text();
+        loadXml(text, file.name);
+        state.fileHandle = fileHandle;
+        await tryRestorePhotoDir(dirHandle);
+        renderEditor();
+      };
+      banner.querySelector('#rb-no').onclick = () => { banner.remove(); idbDel('lastFile'); idbDel('photoDir'); };
+      return;
+    }
+    await tryRestorePhotoDir(dirHandle);
+    renderEditor();
+  } catch(e){ console.warn('Restore failed', e); }
+}
+async function tryRestorePhotoDir(dirHandle){
+  if (!dirHandle) return;
+  try {
+    const dp = await dirHandle.queryPermission({mode:'read'});
+    if (dp === 'granted') state.photoDirHandle = dirHandle;
+  } catch {}
+}
+// Hook into existing openFile/saveFile to persist handles after success
+const _origLoadXml = loadXml;
+loadXml = function(text, name){
+  _origLoadXml(text, name);
+  if (state.fileHandle && state.fileHandle.queryPermission){ idbSet('lastFile', state.fileHandle).catch(()=>{}); }
+};
+const _origPickPhotoFolder = pickPhotoFolder;
+pickPhotoFolder = async function(){
+  await _origPickPhotoFolder();
+  if (state.photoDirHandle) idbSet('photoDir', state.photoDirHandle).catch(()=>{});
+};
+// Also persist when saveFile assigns a new handle
+const _origSaveFile = saveFile;
+saveFile = async function(){
+  await _origSaveFile.apply(null, arguments);
+  if (state.fileHandle && state.fileHandle.queryPermission){ idbSet('lastFile', state.fileHandle).catch(()=>{}); }
+};
+// Run restore after init
+setTimeout(() => tryRestoreLastSession(), 0);
+
+</script>
+</body>
+</html>
