@@ -342,60 +342,6 @@ class Genealog {
   givenname(p){const nm=p.child('name');return nm?nm.childText('givenname'):'';}
   surname(p){const nm=p.child('name');return nm?nm.childText('surname'):'';}
   fullName(p){const g=this.givenname(p),s=this.surname(p);return (g+' '+s).trim()||'?';}
-  // Display name including surname-change history.
-  // The unit's <name><surname> is the original (birth/maiden) surname.
-  // NAME notices record subsequent name changes in chronological (row) order.
-  // Format: "<currentGiven> <currentSurname> (<previousSurname>, <even-earlier>, ..., <original>)"
-  displayName(p){
-    const mainGiven = this.givenname(p);
-    const mainSurname = this.surname(p);
-    const events = this.events(p);   // already sorted by row
-    const nameEvents = events.filter(e => e.tag === 'NAME');
-    // Build chronological surname list, deduplicating consecutive duplicates
-    const chrono = [];
-    if (mainSurname) chrono.push(mainSurname);
-    for (const ev of nameEvents){
-      if (ev.nameSurname && ev.nameSurname !== chrono[chrono.length-1]) chrono.push(ev.nameSurname);
-    }
-    // Most recent given name (from NAME notices, falling back to main)
-    let currentGiven = mainGiven;
-    for (const ev of nameEvents){ if (ev.nameGiven) currentGiven = ev.nameGiven; }
-    if (chrono.length === 0) return (currentGiven || '?');
-    const currentSurname = chrono[chrono.length - 1];
-    const previous = chrono.slice(0, -1).reverse();
-    const surnamePart = previous.length
-      ? `${currentSurname} (${previous.join(', ')})`
-      : currentSurname;
-    return ((currentGiven || '') + ' ' + surnamePart).trim();
-  }
-  // Same as displayName but returns given and surname-with-history separately, for 2-line rendering.
-  displayNameParts(p){
-    const mainGiven = this.givenname(p);
-    const mainSurname = this.surname(p);
-    const events = this.events(p);
-    const nameEvents = events.filter(e => e.tag === 'NAME');
-    const chrono = [];
-    if (mainSurname) chrono.push(mainSurname);
-    for (const ev of nameEvents){
-      if (ev.nameSurname && ev.nameSurname !== chrono[chrono.length-1]) chrono.push(ev.nameSurname);
-    }
-    let currentGiven = mainGiven;
-    for (const ev of nameEvents){ if (ev.nameGiven) currentGiven = ev.nameGiven; }
-    if (chrono.length === 0) return { given: currentGiven || '', surname: '' };
-    const currentSurname = chrono[chrono.length - 1];
-    const previous = chrono.slice(0, -1).reverse();
-    const surnamePart = previous.length ? `${currentSurname} (${previous.join(', ')})` : currentSurname;
-    return { given: currentGiven || '', surname: surnamePart };
-  }
-  // Searchable text — includes all historical surnames so "Passi" finds Maire even after she became Siironen.
-  searchableText(p){
-    const main = (this.givenname(p) + ' ' + this.surname(p));
-    const events = this.events(p);
-    const extras = events.filter(e => e.tag === 'NAME')
-      .map(e => (e.nameGiven || '') + ' ' + (e.nameSurname || ''))
-      .join(' ');
-    return (main + ' ' + extras).toLowerCase();
-  }
   sex(p){return p.attr('sex')||'';}
   unitid(p){return p.attr('unitid')||'';}
 
@@ -766,7 +712,7 @@ function markSaved(){
 // ============================================================================
 // TREE LAYOUT
 // ============================================================================
-const BOX_W = 175, BOX_H = 64, GAP_X = 24, GAP_Y = 64;
+const BOX_W = 150, BOX_H = 50, GAP_X = 24, GAP_Y = 70;
 
 function layoutHourglass(g, focusId, depth){
   // Strategy:
@@ -807,54 +753,41 @@ function layoutHourglass(g, focusId, depth){
   const visitedDesc = new Set();
   const descRoot = buildDesc(focusId, 0, visitedDesc);
 
-  // Bottom-up layout: place each subtree completely, then position the parent box at the
-  // GEOMETRIC center of the children's actual placed centers (not at the subtree's
-  // bounding-box midpoint). This eliminates the diagonal drift that occurs when one
-  // child has a much wider subtree than its siblings — the parent box stays aligned
-  // with where the children actually ended up.
-  // Each node tracks subtreeLeft/Right (in slot units) so siblings can pack against
-  // the actual extent including spouse extensions.
-  function placeDesc(n, x){
-    const step = BOX_W + GAP_X;
+  function widthOf(n){
     n.coupleW = 1 + n.spouses.length;
-    // Place children first, packed left-to-right starting from x
-    let cx = x;
-    for (let i = 0; i < n.children.length; i++){
-      const c = n.children[i];
-      placeDesc(c, cx);
-      cx = c.subtreeRight;
-      if (i < n.children.length - 1 && c.children.length > 0) cx += 0.4;
-    }
-    // Parent box position:
-    //   Prefer to align with children that have their OWN descendants (the descent line),
-    //   so leaf siblings to the side don't pull the parent off the descent vertical.
-    //   Fall back to all children if none have descendants.
-    let personSlot;
-    if (n.children.length > 0){
-      const withDesc = n.children.filter(c => c.children.length > 0);
-      const ref = withDesc.length > 0 ? withDesc : n.children;
-      let sum = 0;
-      for (const c of ref) sum += (c.x + BOX_W/2) / step;
-      const center = sum / ref.length;
-      personSlot = center - 0.5;
-    } else {
-      personSlot = x;
-    }
-    n.x = (personSlot + 0.5) * step - BOX_W/2;
+    let childTotalW = 0;
+    for (const c of n.children) childTotalW += widthOf(c);
+    // Visible gap between sibling-groups that have their own children
+    const branching = n.children.filter(c => c.children.length > 0).length;
+    if (branching > 1) childTotalW += (branching - 1) * 0.4;
+    n.childTotalW = childTotalW;
+    n.subtreeW = Math.max(n.coupleW, childTotalW);
+    return n.subtreeW;
+  }
+  if (descRoot) widthOf(descRoot);
+
+  function placeDesc(n, x){
+    // Couple (person + spouses) centered horizontally in the subtree slot
+    const coupleOffset = (n.subtreeW - n.coupleW) / 2;
+    const personSlot = x + coupleOffset;
+    n.x = (personSlot + 0.5) * (BOX_W + GAP_X) - BOX_W/2;
     n.y = n.gen * (BOX_H + GAP_Y);
     positions.set(n.id, n);
-    // Spouses to the right of the parent
     for (let i = 0; i < n.spouses.length; i++){
-      const sx = (personSlot + 1 + i + 0.5) * step - BOX_W/2;
+      const sx = (personSlot + 1 + i + 0.5) * (BOX_W + GAP_X) - BOX_W/2;
       const sn = { id: n.spouses[i], gen: n.gen, x: sx, y: n.y, isSpouse: true };
       positions.set(n.spouses[i], sn);
       spouseEdges.push([n.id, n.spouses[i]]);
     }
-    // Record the subtree's actual horizontal extent for sibling packing
-    const myRight = personSlot + n.coupleW;
-    n.subtreeLeft = Math.min(x, personSlot);
-    n.subtreeRight = Math.max(cx, myRight);
-    n.subtreeW = n.subtreeRight - n.subtreeLeft;
+    // Children centered horizontally in the subtree slot
+    const childOffset = (n.subtreeW - n.childTotalW) / 2;
+    let cx = x + childOffset;
+    for (let i = 0; i < n.children.length; i++){
+      const c = n.children[i];
+      placeDesc(c, cx);
+      cx += c.subtreeW;
+      if (i < n.children.length - 1 && c.children.length > 0) cx += 0.4;
+    }
   }
   if (descRoot) placeDesc(descRoot, 0);
 
@@ -1090,10 +1023,9 @@ function renderTree(){
   const treeW = maxX - minX, treeH = maxY - minY;
   if (state._needsFit){
     const PAD = 30;
-    const MIN_SCALE = 0.4;   // Don't shrink boxes smaller than 40% — keeps text readable
     const sx = (W - PAD*2) / Math.max(1, treeW);
     const sy = (H - PAD*2) / Math.max(1, treeH);
-    view.scale = Math.max(MIN_SCALE, Math.min(1, Math.min(sx, sy)));
+    view.scale = Math.min(1, Math.min(sx, sy));
     // Try to anchor focus at viewport center, then clamp so the whole tree stays visible.
     const focus = positions.get(state.focusId);
     let txWanted, tyWanted;
@@ -1142,22 +1074,19 @@ function renderTree(){
     if (x1 < x2) parts.push(`<line class="link spouse" x1="${x1}" y1="${y}" x2="${x2}" y2="${y}"/>`);
     else parts.push(`<line class="link spouse" x1="${nb.x+BOX_W}" y1="${y}" x2="${na.x}" y2="${y}"/>`);
   }
-  // Boxes — two-line name layout: given on top, surname (with history) below, then dates.
+  // Boxes
   for (const [, n] of positions){
     const p = state.g.getPerson ? state.g.getPerson(n.id) : state.g.persons.get(n.id);
     if (!p) continue;
     const sex = state.g.sex(p);
     const cls = ['person-box', sex==='M'?'male':sex==='F'?'female':'', n.id===state.focusId?'focus':''].join(' ');
-    const pn = state.g.displayNameParts(p);
-    const givenLine = escapeXml(truncate(pn.given || '', 26));
-    const surnameLine = escapeXml(truncate(pn.surname || '', 28));
+    const name = escapeXml(state.g.fullName(p));
     const by = state.g.birthYear(p), dy = state.g.deathYear(p);
     const dates = (by||dy) ? `${by||'?'}–${dy||''}` : '';
     parts.push(`<g class="${cls}" data-id="${n.id}" data-key="${n.key||n.id}" transform="translate(${n.x},${n.y})">`);
     parts.push(`<rect width="${BOX_W}" height="${BOX_H}"/>`);
-    if (givenLine) parts.push(`<text class="pname" x="${BOX_W/2}" y="20" text-anchor="middle">${givenLine}</text>`);
-    if (surnameLine) parts.push(`<text class="pname surname" x="${BOX_W/2}" y="36" text-anchor="middle">${surnameLine}</text>`);
-    if (dates) parts.push(`<text class="pdates" x="${BOX_W/2}" y="54" text-anchor="middle">${dates}</text>`);
+    parts.push(`<text class="pname" x="${BOX_W/2}" y="20" text-anchor="middle">${truncate(name, 22)}</text>`);
+    parts.push(`<text class="pdates" x="${BOX_W/2}" y="38" text-anchor="middle">${dates}</text>`);
     parts.push(`</g>`);
   }
   parts.push(`</g>`);
@@ -1283,12 +1212,12 @@ function renderEditor(){
     : '';
   const html = `
     <div class="editor-close-btn">
-      <span class="name">${escapeHtml(state.g.displayName(p))}</span>
+      <span class="name">${escapeHtml(state.g.fullName(p))}</span>
       <button id="btn-editor-close" title="Close">✕</button>
     </div>
     <div>
       ${primaryPhotoHtml}
-      <h3>${escapeHtml(state.g.displayName(p))} <span style="color:var(--muted);font-weight:400;font-size:12px">(${escapeHtml(id)})</span></h3>
+      <h3>${escapeHtml(state.g.fullName(p))} <span style="color:var(--muted);font-weight:400;font-size:12px">(${escapeHtml(id)})</span></h3>
       <div class="row" style="margin-top:8px">
         <div class="field"><label>${escapeHtml(t('givenname'))}</label>
           <input type="text" id="f-given" value="${escapeAttr(state.g.givenname(p))}"></div>
@@ -1374,7 +1303,7 @@ function renderEditor(){
   });
   document.getElementById('btn-remove-person').addEventListener('click', () => {
     const n = parents.length + spouses.length + children.length;
-    confirmModal(t('confirmDeleteTitle'), t('confirmDeleteBody', {name: state.g.displayName(p), n})).then(ok => {
+    confirmModal(t('confirmDeleteTitle'), t('confirmDeleteBody', {name: state.g.fullName(p), n})).then(ok => {
       if (!ok) return;
       pushUndo();
       const fallback = parents[0] || children[0] || (spouses[0] && spouses[0].id) || state.g.persons.keys().next().value;
@@ -1506,7 +1435,7 @@ function personLink(id, kind, relNode){
   const by = state.g.birthYear(p), dy = state.g.deathYear(p);
   const dates = (by||dy) ? ` (${by||'?'}${dy?'–'+dy:''})` : '';
   return `<div class="relation-item">
-    <a class="name" data-id="${escapeAttr(id)}">${escapeHtml(state.g.displayName(p))}<span style="color:var(--muted);font-weight:400">${escapeHtml(dates)}</span></a>
+    <a class="name" data-id="${escapeAttr(id)}">${escapeHtml(state.g.fullName(p))}<span style="color:var(--muted);font-weight:400">${escapeHtml(dates)}</span></a>
     <div class="actions">
       <button class="unlink" data-other="${escapeAttr(id)}" data-kind="${escapeAttr(kind)}" title="unlink">×</button>
     </div>
@@ -1630,7 +1559,8 @@ function pickPersonModal(){
       const q = sInput.value.trim().toLowerCase();
       const list = [];
       for (const [id, p] of state.g.persons){
-        if (!q || state.g.searchableText(p).includes(q)) list.push({id, name: state.g.displayName(p), by: state.g.birthYear(p), dy: state.g.deathYear(p)});
+        const name = state.g.fullName(p);
+        if (!q || name.toLowerCase().includes(q)) list.push({id, name, by: state.g.birthYear(p), dy: state.g.deathYear(p)});
         if (list.length > 40) break;
       }
       results.innerHTML = list.map(x => `<div class="item" data-id="${escapeAttr(x.id)}">
@@ -1678,8 +1608,9 @@ function setupSearch(){
     if (!q || !state.g){ hide(); return; }
     const list = [];
     for (const [id, p] of state.g.persons){
-      if (state.g.searchableText(p).includes(q)){
-        list.push({id, name: state.g.displayName(p), by: state.g.birthYear(p), dy: state.g.deathYear(p)});
+      const name = state.g.fullName(p);
+      if (name.toLowerCase().includes(q)){
+        list.push({id, name, by: state.g.birthYear(p), dy: state.g.deathYear(p)});
         if (list.length >= 50) break;
       }
     }
@@ -1910,13 +1841,8 @@ function toast(msg){
 function renderStatus(){
   const left = document.getElementById('status-left');
   const right = document.getElementById('status-right');
-  if (state.g){
-    const visible = document.querySelectorAll('#tree-svg .person-box').length;
-    const total = state.g.persons.size;
-    left.textContent = visible && visible !== total
-      ? `${visible} / ${total} ${t('persons')}`
-      : `${total} ${t('persons')}`;
-  } else left.textContent = '';
+  if (state.g) left.textContent = `${state.g.persons.size} ${t('persons')}`;
+  else left.textContent = '';
   document.getElementById('filename').textContent = state.filename || '';
   right.textContent = t('keyboardHelp');
 }
@@ -2103,19 +2029,6 @@ if (window.electronAPI){
     loadXml(text, name);
     state.fileHandle = { name, dir };
   });
-  // Override saveFile/openFile/newFile so Cmd+S, Cmd+O, Cmd+N keyboard shortcuts
-  // route through Electron IPC instead of falling back to the browser File System
-  // Access path (which would try .createWritable() on the Electron placeholder handle
-  // and throw "createWritable is not a function").
-  saveFile = async function(saveAs){
-    if (!state.g) return;
-    const ok = saveAs ? await api.saveAs() : await api.save();
-    if (ok !== false) markSaved();
-  };
-  openFile = async function(){
-    if (await maybeDiscard() === false) return;
-    await api.open();
-  };
   api.on('file:saved', () => { markSaved(); toast(t('saved')); });
   api.on('menu:new', () => newFile());
   api.on('menu:save', async () => { const ok = await api.save(); if (ok!==false) markSaved(); });
