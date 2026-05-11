@@ -184,7 +184,6 @@
       <button id="btn-view-hourglass" data-i18n="viewHourglass" class="primary"></button>
       <button id="btn-view-pedigree" data-i18n="viewPedigree"></button>
       <button id="btn-view-desc" data-i18n="viewDescendant"></button>
-      <button id="btn-view-all" data-i18n="viewAll" style="display:none"></button>
     </div>
     <div class="group">
       <label data-i18n="generations"></label>
@@ -586,7 +585,7 @@ const I18N = {
   fi: {
     newFile:'Uusi', open:'Avaa', save:'Tallenna', saveAs:'Tallenna nimellä',
     undo:'Kumoa', redo:'Tee uudelleen',
-    view:'Näkymä', viewHourglass:'Tiimalasi', viewPedigree:'Sukutaulu', viewDescendant:'Jälkeläiset', viewAll:'Kaikki',
+    view:'Näkymä', viewHourglass:'Tiimalasi', viewPedigree:'Sukutaulu', viewDescendant:'Jälkeläiset',
     generations:'Sukupolvet', search:'Etsi nimellä…', addPerson:'Lisää henkilö',
     selectPerson:'Valitse henkilö sukupuusta tai aloita lisäämällä uusi.',
     welcomeTitle:'Sukupuu',
@@ -631,7 +630,7 @@ const I18N = {
   en: {
     newFile:'New', open:'Open', save:'Save', saveAs:'Save As',
     undo:'Undo', redo:'Redo',
-    view:'View', viewHourglass:'Hourglass', viewPedigree:'Pedigree', viewDescendant:'Descendants', viewAll:'All',
+    view:'View', viewHourglass:'Hourglass', viewPedigree:'Pedigree', viewDescendant:'Descendants',
     generations:'Generations', search:'Search by name…', addPerson:'Add person',
     selectPerson:'Select a person from the tree, or start by adding one.',
     welcomeTitle:'Family Tree',
@@ -1050,243 +1049,10 @@ function layoutDescendant(g, focusId, depth){
   return { positions, parentEdges, spouseEdges:[], keyed:true };
 }
 
-// "All" view: BFS-walk parent / child / spouse relations from focus, bounded by depth.
-// For descendants (gen >= 0): build a tree per gen=0 couple, compute subtree widths
-// bottom-up, then place each tree top-down so children sit directly below their
-// parent couple (no spreading into a sibling-couple's column).
-// For ancestors (gen < 0): anchor to the average x of visible children below.
-function layoutAll(g, focusId, depth){
-  const generation = new Map();
-  const distance = new Map();
-  generation.set(focusId, 0);
-  distance.set(focusId, 0);
-  const queue = [focusId];
-  while (queue.length){
-    const id = queue.shift();
-    const d = distance.get(id);
-    const gen = generation.get(id);
-    if (d >= depth) continue;
-    for (const pid of g.parentsOf(id)){
-      if (!distance.has(pid)){
-        distance.set(pid, d + 1);
-        generation.set(pid, gen - 1);
-        queue.push(pid);
-      }
-    }
-    for (const cid of g.childrenOf(id)){
-      if (!distance.has(cid)){
-        distance.set(cid, d + 1);
-        generation.set(cid, gen + 1);
-        queue.push(cid);
-      }
-    }
-    for (const sp of g.spousesOf(id)){
-      if (!distance.has(sp.id)){
-        distance.set(sp.id, d + 1);
-        generation.set(sp.id, gen);
-        queue.push(sp.id);
-      }
-    }
-  }
-
-  const positions = new Map();
-  const step = BOX_W + GAP_X;
-  const yStep = BOX_H + GAP_Y;
-  const COUPLE_GAP_PX = step * 0.3;   // gap between siblings (within a family)
-  const FAMILY_GAP_PX = step * 1.0;   // gap between distinct family trees
-  const byYear = id => parseInt(g.birthYear(g.persons.get(id)) || '0', 10);
-  const byGen = new Map();
-  for (const [id, gen] of generation){
-    if (!byGen.has(gen)) byGen.set(gen, []);
-    byGen.get(gen).push(id);
-  }
-
-  // ---- Build descendant trees rooted at each gen=0 couple ----
-  const treeVisited = new Set();
-  function buildTree(id, gen){
-    if (treeVisited.has(id) || generation.get(id) !== gen) return null;
-    treeVisited.add(id);
-    const sps = g.spousesOf(id)
-      .filter(sp => generation.has(sp.id) && generation.get(sp.id) === gen && !treeVisited.has(sp.id))
-      .map(s => s.id);
-    for (const sp of sps) treeVisited.add(sp);
-    // Children: union of visible children of primary or any visible spouse, at gen+1
-    const childIds = new Set();
-    for (const idx of [id, ...sps]){
-      for (const cid of g.childrenOf(idx)){
-        if (generation.has(cid) && generation.get(cid) === gen + 1 && !treeVisited.has(cid)){
-          childIds.add(cid);
-        }
-      }
-    }
-    const sortedChildren = [...childIds].sort((a, b) => byYear(a) - byYear(b));
-    const children = [];
-    for (const cid of sortedChildren){
-      const sub = buildTree(cid, gen + 1);
-      if (sub) children.push(sub);
-    }
-    return { id, gen, spouses: sps, children };
-  }
-  // Group gen=0 people by their parent set so siblings cluster together,
-  // and order parent-groups by the earliest birth year of their children.
-  const gen0People = byGen.get(0) || [];
-  const parentGroup = new Map();   // parentSetKey -> [gen=0 ids]
-  for (const id of gen0People){
-    const parents = g.parentsOf(id).filter(pid => generation.has(pid));
-    const key = parents.length ? parents.slice().sort().join('|') : 'orphan_' + id;
-    if (!parentGroup.has(key)) parentGroup.set(key, []);
-    parentGroup.get(key).push(id);
-  }
-  const groupKeys = [...parentGroup.keys()].sort((a, b) => {
-    const minA = Math.min(...parentGroup.get(a).map(byYear));
-    const minB = Math.min(...parentGroup.get(b).map(byYear));
-    return minA - minB;
-  });
-  // Build trees: for each parent group, build trees for each child in birth order.
-  // Label each tree with its parent group so we know when to insert family gaps.
-  const trees = [];
-  for (const key of groupKeys){
-    const childIds = parentGroup.get(key).sort((a, b) => byYear(a) - byYear(b));
-    for (const id of childIds){
-      if (treeVisited.has(id)) continue;
-      const t = buildTree(id, 0);
-      if (t){ t.parentGroupKey = key; trees.push(t); }
-    }
-  }
-
-  // ---- Compute subtree widths bottom-up (in pixels) ----
-  function computeWidth(n){
-    n.coupleW = (1 + n.spouses.length) * step - GAP_X;
-    let childrenW = 0;
-    for (const c of n.children){
-      computeWidth(c);
-      childrenW += c.subtreeW;
-    }
-    if (n.children.length > 1) childrenW += COUPLE_GAP_PX * (n.children.length - 1);
-    n.childrenTotalW = childrenW;
-    n.subtreeW = Math.max(n.coupleW, childrenW);
-  }
-  for (const t of trees) computeWidth(t);
-
-  // ---- Place trees top-down ----
-  function placeTree(n, leftX){
-    // Couple centered horizontally within its subtree width
-    const coupleStart = leftX + (n.subtreeW - n.coupleW) / 2;
-    positions.set(n.id, { id: n.id, gen: n.gen, x: coupleStart, y: n.gen * yStep });
-    for (let i = 0; i < n.spouses.length; i++){
-      positions.set(n.spouses[i], {
-        id: n.spouses[i], gen: n.gen,
-        x: coupleStart + (i + 1) * step, y: n.gen * yStep
-      });
-    }
-    // Children also centered within the subtree, packed left-to-right
-    let cx = leftX + (n.subtreeW - n.childrenTotalW) / 2;
-    for (let i = 0; i < n.children.length; i++){
-      placeTree(n.children[i], cx);
-      cx += n.children[i].subtreeW;
-      if (i < n.children.length - 1) cx += COUPLE_GAP_PX;
-    }
-  }
-  let cursor = 0;
-  for (const t of trees){
-    placeTree(t, cursor);
-    cursor += t.subtreeW + FAMILY_GAP_PX;
-  }
-
-  // ---- Place ancestors (gen < 0) using anchor logic ----
-  const minGen = Math.min(...generation.values());
-  for (let gen = -1; gen >= minGen; gen--){
-    const list = byGen.get(gen) || [];
-    const anchor = new Map();
-    // Anchor each person at the average x of their visible children (below us)
-    for (const id of list){
-      const visibleChildren = g.childrenOf(id).filter(cid => positions.has(cid));
-      if (visibleChildren.length){
-        const avg = visibleChildren.reduce((s, cid) => s + positions.get(cid).x, 0) / visibleChildren.length;
-        anchor.set(id, avg);
-      }
-    }
-    // In-laws (no visible children at gen+1): anchor via spouse
-    for (let iter = 0; iter < 3; iter++){
-      let changed = false;
-      for (const id of list){
-        if (anchor.has(id)) continue;
-        for (const sp of g.spousesOf(id)){
-          if (anchor.has(sp.id)){
-            anchor.set(id, anchor.get(sp.id) + step * 0.5);
-            changed = true;
-            break;
-          }
-        }
-      }
-      if (!changed) break;
-    }
-    list.sort((a, b) => {
-      const aa = anchor.get(a), bb = anchor.get(b);
-      if (aa == null && bb == null) return byYear(a) - byYear(b) || a.localeCompare(b);
-      if (aa == null) return 1;
-      if (bb == null) return -1;
-      if (aa !== bb) return aa - bb;
-      return byYear(a) - byYear(b);
-    });
-    // Pull spouses adjacent
-    const placed = new Set();
-    const ordered = [];
-    const pulled = new Set();
-    const inList = new Set(list);
-    for (const id of list){
-      if (placed.has(id)) continue;
-      ordered.push(id);
-      placed.add(id);
-      for (const sp of g.spousesOf(id)){
-        if (inList.has(sp.id) && !placed.has(sp.id)){
-          ordered.push(sp.id);
-          placed.add(sp.id);
-          pulled.add(sp.id);
-        }
-      }
-    }
-    let acursor = -Infinity;
-    if (ordered.every(id => !anchor.has(id))){
-      acursor = -((ordered.length * step - GAP_X) / 2);
-    }
-    let isFirst = true;
-    for (const id of ordered){
-      if (!pulled.has(id)){
-        if (!isFirst) acursor += COUPLE_GAP_PX;
-        isFirst = false;
-      }
-      const want = pulled.has(id) ? acursor : (anchor.has(id) ? anchor.get(id) : acursor);
-      const x = Math.max(acursor, want);
-      positions.set(id, { id, gen, x, y: gen * yStep });
-      acursor = x + step;
-    }
-  }
-
-  // ---- Edges ----
-  const parentEdges = [];
-  const spouseEdges = [];
-  const seenSp = new Set();
-  for (const [id] of positions){
-    for (const pid of g.parentsOf(id)){
-      if (positions.has(pid)) parentEdges.push({ from: pid, to: id });
-    }
-    for (const sp of g.spousesOf(id)){
-      if (!positions.has(sp.id)) continue;
-      const k = id < sp.id ? id + '|' + sp.id : sp.id + '|' + id;
-      if (seenSp.has(k)) continue;
-      seenSp.add(k);
-      spouseEdges.push([id, sp.id]);
-    }
-  }
-  return { positions, parentEdges, spouseEdges };
-}
-
 function layout(g, view, focusId, depth){
   if (!g || !focusId || !g.persons.has(focusId)) return null;
   if (view === 'hourglass') return layoutHourglass(g, focusId, depth);
   if (view === 'pedigree')  return layoutPedigree(g, focusId, depth);
-  if (view === 'all')       return layoutAll(g, focusId, depth);
   return layoutDescendant(g, focusId, depth);
 }
 
@@ -1358,45 +1124,15 @@ function renderTree(){
   // Build SVG content
   let parts = [];
   parts.push(`<g id="root" transform="translate(${view.tx},${view.ty}) scale(${view.scale})">`);
-  // Edges first (under boxes). Group parent→child edges by the child's parent set so
-  // siblings share a single horizontal "bus" line instead of N stacked L-shapes.
-  const childToParents = new Map();
+  // Edges first (under boxes)
   for (const e of lay.parentEdges){
-    const childKey = lay.keyed ? e.toKey : e.to;
-    const parentKey = lay.keyed ? e.fromKey : e.from;
-    if (!childToParents.has(childKey)) childToParents.set(childKey, []);
-    childToParents.get(childKey).push(parentKey);
-  }
-  // Group children by their parent set
-  const familyGroups = new Map();
-  for (const [childKey, parentKeys] of childToParents){
-    const groupKey = parentKeys.slice().sort().join('|');
-    if (!familyGroups.has(groupKey)) familyGroups.set(groupKey, { parents: parentKeys, children: [] });
-    familyGroups.get(groupKey).children.push(childKey);
-  }
-  // Draw each family group as a single shared bus at the midpoint between rows:
-  // parents drop into the bus, the bus spans the children, children drop down from it.
-  for (const [, group] of familyGroups){
-    const parentNodes = group.parents.map(k => positions.get(k)).filter(Boolean);
-    const childNodes = group.children.map(k => positions.get(k)).filter(Boolean);
-    if (!parentNodes.length || !childNodes.length) continue;
-    const parentY = Math.max(...parentNodes.map(p => p.y + BOX_H));
-    const childY = Math.min(...childNodes.map(c => c.y));
-    const busY = (parentY + childY) / 2;
-    const xs = [...parentNodes.map(p => p.x + BOX_W/2), ...childNodes.map(c => c.x + BOX_W/2)];
-    const busLeft = Math.min(...xs);
-    const busRight = Math.max(...xs);
-    for (const p of parentNodes){
-      const px = p.x + BOX_W/2;
-      parts.push(`<path class="link" d="M${px},${p.y + BOX_H} L${px},${busY}"/>`);
-    }
-    if (busLeft < busRight){
-      parts.push(`<path class="link" d="M${busLeft},${busY} L${busRight},${busY}"/>`);
-    }
-    for (const c of childNodes){
-      const cx = c.x + BOX_W/2;
-      parts.push(`<path class="link" d="M${cx},${busY} L${cx},${c.y}"/>`);
-    }
+    const a = lay.keyed ? positions.get(e.fromKey) : positions.get(e.from);
+    const b = lay.keyed ? positions.get(e.toKey) : positions.get(e.to);
+    if (!a || !b) continue;
+    const x1 = a.x + BOX_W/2, y1 = a.y + BOX_H;
+    const x2 = b.x + BOX_W/2, y2 = b.y;
+    const my = (y1 + y2)/2;
+    parts.push(`<path class="link" d="M${x1},${y1} L${x1},${my} L${x2},${my} L${x2},${y2}"/>`);
   }
   for (const [a,b] of lay.spouseEdges){
     const na = positions.get(a), nb = positions.get(b);
@@ -1427,9 +1163,7 @@ function renderTree(){
   parts.push(`</g>`);
   svg.innerHTML = parts.join('');
 
-  // Click handling on persons. Always go through render() so loadPhotos() runs
-  // — otherwise re-clicking the focus would rebuild the editor HTML (with an empty
-  // primary-photo div) without re-fetching the image, and the photo would blank out.
+  // Click handling on persons
   for (const el of svg.querySelectorAll('.person-box')){
     el.addEventListener('click', (ev) => {
       ev.stopPropagation();
@@ -1437,8 +1171,10 @@ function renderTree(){
       if (id !== state.focusId){
         state.focusId = id;
         state._needsFit = true;
+        render();
+      } else {
+        renderEditor();
       }
-      render();
       if (isMobile()) showMobileSheet();
     });
   }
@@ -2223,7 +1959,6 @@ function bindToolbar(){
   document.getElementById('btn-view-hourglass').addEventListener('click', () => setView('hourglass'));
   document.getElementById('btn-view-pedigree').addEventListener('click',  () => setView('pedigree'));
   document.getElementById('btn-view-desc').addEventListener('click',      () => setView('descendant'));
-  document.getElementById('btn-view-all').addEventListener('click',       () => setView('all'));
   document.getElementById('depth').addEventListener('input', (e) => {
     const v = +e.target.value;
     // At max position (10), treat as "show everything" — capped by data depth at runtime
@@ -2276,11 +2011,10 @@ function bindToolbar(){
 }
 function setView(v){
   state.view = v; state._needsFit = true;
-  for (const id of ['btn-view-hourglass','btn-view-pedigree','btn-view-desc','btn-view-all']) document.getElementById(id).classList.remove('primary');
+  for (const id of ['btn-view-hourglass','btn-view-pedigree','btn-view-desc']) document.getElementById(id).classList.remove('primary');
   if (v==='hourglass') document.getElementById('btn-view-hourglass').classList.add('primary');
   if (v==='pedigree')  document.getElementById('btn-view-pedigree').classList.add('primary');
   if (v==='descendant')document.getElementById('btn-view-desc').classList.add('primary');
-  if (v==='all')       document.getElementById('btn-view-all').classList.add('primary');
   renderTree();
 }
 
