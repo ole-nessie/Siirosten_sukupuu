@@ -24,6 +24,12 @@
   button:hover{background:var(--soft)}
   button:disabled{opacity:.4;cursor:default}
   button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .snap-slot{min-width:26px;font-size:11px;font-weight:600;position:relative;padding:4px 6px}
+  .snap-slot.filled{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .snap-slot.is-default::after{content:"★";position:absolute;top:-5px;right:-3px;font-size:8px;line-height:1}
+  #snap-ctx{position:fixed;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:4px;z-index:9999;display:none;flex-direction:column;gap:2px;box-shadow:var(--shadow)}
+  #snap-ctx button{text-align:left;background:none;border:none;padding:5px 12px;cursor:pointer;font-size:13px;border-radius:5px;color:var(--ink)}
+  #snap-ctx button:hover{background:var(--soft)}
   button.primary:hover{background:#2c6f5b;border-color:#2c6f5b}
   button.danger{background:var(--danger);color:#fff;border-color:var(--danger)}
   button.danger:hover{background:var(--dangerHover);border-color:var(--dangerHover)}
@@ -184,12 +190,19 @@
       <button id="btn-view-hourglass" data-i18n="viewHourglass" class="primary"></button>
       <button id="btn-view-pedigree" data-i18n="viewPedigree"></button>
       <button id="btn-view-desc" data-i18n="viewDescendant"></button>
-      <button id="btn-view-all" data-i18n="viewAll" style="display:none"></button>
+      <button id="btn-view-all" data-i18n="viewAll"></button>
     </div>
     <div class="group">
       <label data-i18n="generations"></label>
       <input type="range" id="depth" min="1" max="10" value="3">
       <span id="depth-val">3</span>
+    </div>
+    <div class="group" id="snap-group" style="display:none">
+      <label id="snap-label">Snapshots</label>
+      <button class="snap-slot" id="snap-s1" data-slot="1" title="">1</button>
+      <button class="snap-slot" id="snap-s2" data-slot="2" title="">2</button>
+      <button class="snap-slot" id="snap-s3" data-slot="3" title="">3</button>
+      <button id="snap-reset" title="Reset to auto-layout / Palauta automaattinen">&#x21BA;</button>
     </div>
     <div class="group" style="position:relative">
       <input type="search" id="search" placeholder="" style="width:160px">
@@ -1056,237 +1069,160 @@ function layoutDescendant(g, focusId, depth){
 // parent couple (no spreading into a sibling-couple's column).
 // For ancestors (gen < 0): anchor to the average x of visible children below.
 function layoutAll(g, focusId, depth){
-  const generation = new Map();
-  const distance = new Map();
-  generation.set(focusId, 0);
-  distance.set(focusId, 0);
-  const queue = [focusId];
-  while (queue.length){
-    const id = queue.shift();
-    const d = distance.get(id);
-    const gen = generation.get(id);
-    if (d >= depth) continue;
+  // Nuclear-family pod layout.
+  //
+  // Each person is either:
+  //   LEAF   — has no spouse and no children of their own.
+  //            → Strong, short, BIDIRECTIONAL spring to their parents (rest 270px).
+  //            → They live INSIDE the parent's family pod.
+  //   BRIDGE — has a spouse or children of their own.
+  //            → Weak, long, ATTRACTIVE-ONLY spring to birth parents (rest 950px).
+  //            → They belong to their OWN pod; a thin line connects back to birth parents.
+  //
+  // Sibling springs: leaf-leaf pairs are tight (rest 250px strong); mixed/bridge pairs are loose.
+  // Result: every nuclear family forms one tight pod; inter-pod links are long and sparse.
+
+  const allIds = [...g.persons.keys()];
+  const n = allIds.length;
+  if (!n) return null;
+
+  const cacheKey = g.persons.size + ',' + g.relations.length;
+  if (g.__allLayoutCache && g.__allLayoutCache.key === cacheKey)
+    return g.__allLayoutCache.result;
+
+  const idxOf = new Map(); allIds.forEach((id,i) => idxOf.set(id,i));
+
+  // ── 1. Classify leaf vs bridge ────────────────────────────────────────────
+  const isLeaf = new Map();
+  for (const id of allIds)
+    isLeaf.set(id, g.spousesOf(id).length === 0 && g.childrenOf(id).length === 0);
+
+  // ── 2. Springs ────────────────────────────────────────────────────────────
+  const springs = [], seenE = new Set();
+  const addSpr = (ia, ib, rest, k, bidir) => {
+    if (ia==null||ib==null||ia===ib) return;
+    const key = ia<ib ? `${ia},${ib}` : `${ib},${ia}`;
+    if (seenE.has(key)) return; seenE.add(key);
+    springs.push({i:ia, j:ib, rest, k, bidir});
+  };
+
+  for (const id of allIds){
+    const i = idxOf.get(id);
+    // Spouse: always strong, bidirectional — partners stay side by side
+    for (const sp of g.spousesOf(id))
+      addSpr(i, idxOf.get(sp.id), 215, 0.46, true);
+
+    // Parent-child: strength depends on whether the child has their own family
     for (const pid of g.parentsOf(id)){
-      if (!distance.has(pid)){
-        distance.set(pid, d + 1);
-        generation.set(pid, gen - 1);
-        queue.push(pid);
+      if (isLeaf.get(id)){
+        // Leaf child lives IN the parent pod — tight bidirectional spring
+        addSpr(i, idxOf.get(pid), 270, 0.32, true);
+      } else {
+        // Bridge: belongs to own pod, weak long attractive-only spring back to birth parents
+        addSpr(i, idxOf.get(pid), 950, 0.038, false);
       }
     }
-    for (const cid of g.childrenOf(id)){
-      if (!distance.has(cid)){
-        distance.set(cid, d + 1);
-        generation.set(cid, gen + 1);
-        queue.push(cid);
-      }
-    }
-    for (const sp of g.spousesOf(id)){
-      if (!distance.has(sp.id)){
-        distance.set(sp.id, d + 1);
-        generation.set(sp.id, gen);
-        queue.push(sp.id);
-      }
+
+    // Sibling springs between children of this parent
+    const kids = g.childrenOf(id);
+    for (let a=0;a<kids.length;a++) for (let b=a+1;b<kids.length;b++){
+      const ia=idxOf.get(kids[a]), ib=idxOf.get(kids[b]);
+      const ll = isLeaf.get(kids[a]) && isLeaf.get(kids[b]);
+      // Leaf-leaf: very tight; any non-leaf: loose (they're pulled toward own families)
+      addSpr(ia, ib, ll ? 245 : 520, ll ? 0.24 : 0.07, false);
     }
   }
 
-  const positions = new Map();
-  const step = BOX_W + GAP_X;
-  const yStep = BOX_H + GAP_Y;
-  const COUPLE_GAP_PX = step * 0.3;   // gap between siblings (within a family)
-  const FAMILY_GAP_PX = step * 1.0;   // gap between distinct family trees
-  const byYear = id => parseInt(g.birthYear(g.persons.get(id)) || '0', 10);
+  // ── 3. Generation assignment via BFS from roots ───────────────────────────
+  const genOf = new Map();
+  { const roots = allIds.filter(id => g.parentsOf(id).length === 0);
+    const q = [];
+    for (const r of roots){ if (!genOf.has(r)){ genOf.set(r,0); q.push(r); } }
+    while (q.length){
+      const id=q.shift(), g0=genOf.get(id);
+      for (const sp  of g.spousesOf(id))  if (!genOf.has(sp.id)){ genOf.set(sp.id,g0);   q.push(sp.id); }
+      for (const cid of g.childrenOf(id)) if (!genOf.has(cid))  { genOf.set(cid,  g0+1); q.push(cid);   }
+    }
+    for (const id of allIds) if (!genOf.has(id)) genOf.set(id,0);
+  }
+
+  // ── 4. Generation-grid initialisation ────────────────────────────────────
+  // Within each generation, sort siblings together so their springs start short.
   const byGen = new Map();
-  for (const [id, gen] of generation){
-    if (!byGen.has(gen)) byGen.set(gen, []);
-    byGen.get(gen).push(id);
+  for (const id of allIds){
+    const g0=genOf.get(id);
+    if (!byGen.has(g0)) byGen.set(g0,[]);
+    byGen.get(g0).push(id);
   }
+  for (const ids of byGen.values())
+    ids.sort((a,b)=>{ const pa=g.parentsOf(a)[0]||a, pb=g.parentsOf(b)[0]||b;
+                      return pa<pb?-1:pa>pb?1:a<b?-1:1; });
 
-  // ---- Build descendant trees rooted at each gen=0 couple ----
-  const treeVisited = new Set();
-  function buildTree(id, gen){
-    if (treeVisited.has(id) || generation.get(id) !== gen) return null;
-    treeVisited.add(id);
-    const sps = g.spousesOf(id)
-      .filter(sp => generation.has(sp.id) && generation.get(sp.id) === gen && !treeVisited.has(sp.id))
-      .map(s => s.id);
-    for (const sp of sps) treeVisited.add(sp);
-    // Children: union of visible children of primary or any visible spouse, at gen+1
-    const childIds = new Set();
-    for (const idx of [id, ...sps]){
-      for (const cid of g.childrenOf(idx)){
-        if (generation.has(cid) && generation.get(cid) === gen + 1 && !treeVisited.has(cid)){
-          childIds.add(cid);
-        }
-      }
+  const px=new Float64Array(n), py=new Float64Array(n);
+  const Y_STEP=320, X_STEP=260;
+  for (const [g0,ids] of byGen)
+    ids.forEach((id,j)=>{ const i=idxOf.get(id);
+      px[i]=(j-(ids.length-1)/2)*X_STEP; py[i]=g0*Y_STEP; });
+
+  // ── 5. Force simulation ───────────────────────────────────────────────────
+  const K_REP=160000, MAX_TEMP=560, ITERS=230;
+  const fx=new Float64Array(n), fy=new Float64Array(n);
+
+  for(let iter=0;iter<ITERS;iter++){
+    const temp=MAX_TEMP*Math.pow(1-iter/ITERS,1.1);
+    fx.fill(0); fy.fill(0);
+
+    // Repulsion between every pair of nodes
+    for(let i=0;i<n;i++) for(let j=i+1;j<n;j++){
+      const dx=px[i]-px[j], dy=py[i]-py[j];
+      const d2=dx*dx+dy*dy||1; const d=Math.sqrt(d2);
+      const F=K_REP/d2; const ux=dx/d, uy=dy/d;
+      fx[i]+=F*ux; fy[i]+=F*uy; fx[j]-=F*ux; fy[j]-=F*uy;
     }
-    const sortedChildren = [...childIds].sort((a, b) => byYear(a) - byYear(b));
-    const children = [];
-    for (const cid of sortedChildren){
-      const sub = buildTree(cid, gen + 1);
-      if (sub) children.push(sub);
+    // Springs
+    for(const s of springs){
+      const dx=px[s.j]-px[s.i], dy=py[s.j]-py[s.i];
+      const d=Math.sqrt(dx*dx+dy*dy)||1;
+      const raw=s.k*(d-s.rest);
+      const F=s.bidir?raw:Math.max(0,raw);
+      if(Math.abs(F)<1e-4) continue;
+      const ux=dx/d, uy=dy/d;
+      fx[s.i]+=F*ux; fy[s.i]+=F*uy; fx[s.j]-=F*ux; fy[s.j]-=F*uy;
     }
-    return { id, gen, spouses: sps, children };
-  }
-  // Group gen=0 people by their parent set so siblings cluster together,
-  // and order parent-groups by the earliest birth year of their children.
-  const gen0People = byGen.get(0) || [];
-  const parentGroup = new Map();   // parentSetKey -> [gen=0 ids]
-  for (const id of gen0People){
-    const parents = g.parentsOf(id).filter(pid => generation.has(pid));
-    const key = parents.length ? parents.slice().sort().join('|') : 'orphan_' + id;
-    if (!parentGroup.has(key)) parentGroup.set(key, []);
-    parentGroup.get(key).push(id);
-  }
-  const groupKeys = [...parentGroup.keys()].sort((a, b) => {
-    const minA = Math.min(...parentGroup.get(a).map(byYear));
-    const minB = Math.min(...parentGroup.get(b).map(byYear));
-    return minA - minB;
-  });
-  // Build trees: for each parent group, build trees for each child in birth order.
-  // Label each tree with its parent group so we know when to insert family gaps.
-  const trees = [];
-  for (const key of groupKeys){
-    const childIds = parentGroup.get(key).sort((a, b) => byYear(a) - byYear(b));
-    for (const id of childIds){
-      if (treeVisited.has(id)) continue;
-      const t = buildTree(id, 0);
-      if (t){ t.parentGroupKey = key; trees.push(t); }
+    // Displace, capped by temperature
+    for(let i=0;i<n;i++){
+      const mag=Math.sqrt(fx[i]*fx[i]+fy[i]*fy[i])||1;
+      const disp=Math.min(mag,temp);
+      px[i]+=(fx[i]/mag)*disp; py[i]+=(fy[i]/mag)*disp;
     }
   }
 
-  // ---- Compute subtree widths bottom-up (in pixels) ----
-  function computeWidth(n){
-    n.coupleW = (1 + n.spouses.length) * step - GAP_X;
-    let childrenW = 0;
-    for (const c of n.children){
-      computeWidth(c);
-      childrenW += c.subtreeW;
-    }
-    if (n.children.length > 1) childrenW += COUPLE_GAP_PX * (n.children.length - 1);
-    n.childrenTotalW = childrenW;
-    n.subtreeW = Math.max(n.coupleW, childrenW);
-  }
-  for (const t of trees) computeWidth(t);
+  // ── 6. Output ─────────────────────────────────────────────────────────────
+  const positions=new Map();
+  for(const id of allIds){ const i=idxOf.get(id); positions.set(id,{id,x:px[i]-BOX_W/2,y:py[i]-BOX_H/2}); }
 
-  // ---- Place trees top-down ----
-  function placeTree(n, leftX){
-    // Couple centered horizontally within its subtree width
-    const coupleStart = leftX + (n.subtreeW - n.coupleW) / 2;
-    positions.set(n.id, { id: n.id, gen: n.gen, x: coupleStart, y: n.gen * yStep });
-    for (let i = 0; i < n.spouses.length; i++){
-      positions.set(n.spouses[i], {
-        id: n.spouses[i], gen: n.gen,
-        x: coupleStart + (i + 1) * step, y: n.gen * yStep
-      });
-    }
-    // Children also centered within the subtree, packed left-to-right
-    let cx = leftX + (n.subtreeW - n.childrenTotalW) / 2;
-    for (let i = 0; i < n.children.length; i++){
-      placeTree(n.children[i], cx);
-      cx += n.children[i].subtreeW;
-      if (i < n.children.length - 1) cx += COUPLE_GAP_PX;
+  const parentEdges=[], spouseEdges=[], seenSp=new Set();
+  for(const id of allIds){
+    for(const pid of g.parentsOf(id))
+      if(positions.has(pid)) parentEdges.push({from:pid,to:id});
+    for(const sp of g.spousesOf(id)){
+      const k=id<sp.id?id+'|'+sp.id:sp.id+'|'+id;
+      if(!seenSp.has(k)){ seenSp.add(k); spouseEdges.push([id,sp.id]); }
     }
   }
-  let cursor = 0;
-  for (const t of trees){
-    placeTree(t, cursor);
-    cursor += t.subtreeW + FAMILY_GAP_PX;
-  }
-
-  // ---- Place ancestors (gen < 0) using anchor logic ----
-  const minGen = Math.min(...generation.values());
-  for (let gen = -1; gen >= minGen; gen--){
-    const list = byGen.get(gen) || [];
-    const anchor = new Map();
-    // Anchor each person at the average x of their visible children (below us)
-    for (const id of list){
-      const visibleChildren = g.childrenOf(id).filter(cid => positions.has(cid));
-      if (visibleChildren.length){
-        const avg = visibleChildren.reduce((s, cid) => s + positions.get(cid).x, 0) / visibleChildren.length;
-        anchor.set(id, avg);
-      }
-    }
-    // In-laws (no visible children at gen+1): anchor via spouse
-    for (let iter = 0; iter < 3; iter++){
-      let changed = false;
-      for (const id of list){
-        if (anchor.has(id)) continue;
-        for (const sp of g.spousesOf(id)){
-          if (anchor.has(sp.id)){
-            anchor.set(id, anchor.get(sp.id) + step * 0.5);
-            changed = true;
-            break;
-          }
-        }
-      }
-      if (!changed) break;
-    }
-    list.sort((a, b) => {
-      const aa = anchor.get(a), bb = anchor.get(b);
-      if (aa == null && bb == null) return byYear(a) - byYear(b) || a.localeCompare(b);
-      if (aa == null) return 1;
-      if (bb == null) return -1;
-      if (aa !== bb) return aa - bb;
-      return byYear(a) - byYear(b);
-    });
-    // Pull spouses adjacent
-    const placed = new Set();
-    const ordered = [];
-    const pulled = new Set();
-    const inList = new Set(list);
-    for (const id of list){
-      if (placed.has(id)) continue;
-      ordered.push(id);
-      placed.add(id);
-      for (const sp of g.spousesOf(id)){
-        if (inList.has(sp.id) && !placed.has(sp.id)){
-          ordered.push(sp.id);
-          placed.add(sp.id);
-          pulled.add(sp.id);
-        }
-      }
-    }
-    let acursor = -Infinity;
-    if (ordered.every(id => !anchor.has(id))){
-      acursor = -((ordered.length * step - GAP_X) / 2);
-    }
-    let isFirst = true;
-    for (const id of ordered){
-      if (!pulled.has(id)){
-        if (!isFirst) acursor += COUPLE_GAP_PX;
-        isFirst = false;
-      }
-      const want = pulled.has(id) ? acursor : (anchor.has(id) ? anchor.get(id) : acursor);
-      const x = Math.max(acursor, want);
-      positions.set(id, { id, gen, x, y: gen * yStep });
-      acursor = x + step;
-    }
-  }
-
-  // ---- Edges ----
-  const parentEdges = [];
-  const spouseEdges = [];
-  const seenSp = new Set();
-  for (const [id] of positions){
-    for (const pid of g.parentsOf(id)){
-      if (positions.has(pid)) parentEdges.push({ from: pid, to: id });
-    }
-    for (const sp of g.spousesOf(id)){
-      if (!positions.has(sp.id)) continue;
-      const k = id < sp.id ? id + '|' + sp.id : sp.id + '|' + id;
-      if (seenSp.has(k)) continue;
-      seenSp.add(k);
-      spouseEdges.push([id, sp.id]);
-    }
-  }
-  return { positions, parentEdges, spouseEdges };
+  const result={positions,parentEdges,spouseEdges,straight:true};
+  g.__allLayoutCache={key:cacheKey,result};
+  return result;
 }
 
+
 function layout(g, view, focusId, depth){
-  if (!g || !focusId || !g.persons.has(focusId)) return null;
+  if (!g) return null;
+  // 'all' view shows every person — no focus needed
+  if (view === 'all') return g.persons.size ? layoutAll(g, focusId, depth) : null;
+  if (!focusId || !g.persons.has(focusId)) return null;
   if (view === 'hourglass') return layoutHourglass(g, focusId, depth);
   if (view === 'pedigree')  return layoutPedigree(g, focusId, depth);
-  if (view === 'all')       return layoutAll(g, focusId, depth);
   return layoutDescendant(g, focusId, depth);
 }
 
@@ -1294,6 +1230,7 @@ function layout(g, view, focusId, depth){
 // SVG RENDERING + PAN/ZOOM
 // ============================================================================
 const view = { tx: 0, ty: 0, scale: 1 };
+let suppressNextBoxClick = false; // set when a node-drag ends so the click doesn't also fire
 
 function renderTree(){
   const svg = document.getElementById('tree-svg');
@@ -1306,6 +1243,11 @@ function renderTree(){
   empty.style.display = 'none';
   const lay = layout(state.g, state.view, state.focusId, state.depth);
   if (!lay){ svg.innerHTML = ''; return; }
+  // On first entry to 'all' view, apply the default snapshot if one is set
+  if (state.view === 'all' && state._applyDefaultSnap){
+    state._applyDefaultSnap = false;
+    snapApplyDefault(lay.positions);
+  }
 
   const positions = lay.positions;
   // Compute bounds
@@ -1324,7 +1266,7 @@ function renderTree(){
   const treeW = maxX - minX, treeH = maxY - minY;
   if (state._needsFit){
     const PAD = 30;
-    const MIN_SCALE = 0.4;   // Don't shrink boxes smaller than 40% — keeps text readable
+    const MIN_SCALE = state.view==='all' ? 0.05 : 0.4;   // 'all' view can zoom out further to fit the whole network
     const sx = (W - PAD*2) / Math.max(1, treeW);
     const sy = (H - PAD*2) / Math.max(1, treeH);
     view.scale = Math.max(MIN_SCALE, Math.min(1, Math.min(sx, sy)));
@@ -1358,53 +1300,68 @@ function renderTree(){
   // Build SVG content
   let parts = [];
   parts.push(`<g id="root" transform="translate(${view.tx},${view.ty}) scale(${view.scale})">`);
-  // Edges first (under boxes). Group parent→child edges by the child's parent set so
-  // siblings share a single horizontal "bus" line instead of N stacked L-shapes.
-  const childToParents = new Map();
-  for (const e of lay.parentEdges){
-    const childKey = lay.keyed ? e.toKey : e.to;
-    const parentKey = lay.keyed ? e.fromKey : e.from;
-    if (!childToParents.has(childKey)) childToParents.set(childKey, []);
-    childToParents.get(childKey).push(parentKey);
-  }
-  // Group children by their parent set
-  const familyGroups = new Map();
-  for (const [childKey, parentKeys] of childToParents){
-    const groupKey = parentKeys.slice().sort().join('|');
-    if (!familyGroups.has(groupKey)) familyGroups.set(groupKey, { parents: parentKeys, children: [] });
-    familyGroups.get(groupKey).children.push(childKey);
-  }
-  // Draw each family group as a single shared bus at the midpoint between rows:
-  // parents drop into the bus, the bus spans the children, children drop down from it.
-  for (const [, group] of familyGroups){
-    const parentNodes = group.parents.map(k => positions.get(k)).filter(Boolean);
-    const childNodes = group.children.map(k => positions.get(k)).filter(Boolean);
-    if (!parentNodes.length || !childNodes.length) continue;
-    const parentY = Math.max(...parentNodes.map(p => p.y + BOX_H));
-    const childY = Math.min(...childNodes.map(c => c.y));
-    const busY = (parentY + childY) / 2;
-    const xs = [...parentNodes.map(p => p.x + BOX_W/2), ...childNodes.map(c => c.x + BOX_W/2)];
-    const busLeft = Math.min(...xs);
-    const busRight = Math.max(...xs);
-    for (const p of parentNodes){
-      const px = p.x + BOX_W/2;
-      parts.push(`<path class="link" d="M${px},${p.y + BOX_H} L${px},${busY}"/>`);
+  // Edges first. In the force-directed 'all' view use simple straight lines;
+  // in hierarchical views use shared "bus" routing so siblings share one connector.
+  if (lay.straight){
+    // Straight lines: parent→child
+    for (const e of lay.parentEdges){
+      const na=positions.get(e.from), nb=positions.get(e.to); if (!na||!nb) continue;
+      parts.push(`<line class="link" data-from="${e.from}" data-to="${e.to}" x1="${na.x+BOX_W/2}" y1="${na.y+BOX_H/2}" x2="${nb.x+BOX_W/2}" y2="${nb.y+BOX_H/2}"/>`);
     }
-    if (busLeft < busRight){
-      parts.push(`<path class="link" d="M${busLeft},${busY} L${busRight},${busY}"/>`);
+    // Straight lines: spouse
+    for (const [a,b] of lay.spouseEdges){
+      const na=positions.get(a), nb=positions.get(b); if (!na||!nb) continue;
+      parts.push(`<line class="link spouse" data-spa="${a}" data-spb="${b}" x1="${na.x+BOX_W/2}" y1="${na.y+BOX_H/2}" x2="${nb.x+BOX_W/2}" y2="${nb.y+BOX_H/2}"/>`);
     }
-    for (const c of childNodes){
-      const cx = c.x + BOX_W/2;
-      parts.push(`<path class="link" d="M${cx},${busY} L${cx},${c.y}"/>`);
+  } else {
+    // Hierarchical views: group parent→child edges by the child's parent set so
+    // siblings share a single horizontal "bus" line instead of N stacked L-shapes.
+    const childToParents = new Map();
+    for (const e of lay.parentEdges){
+      const childKey = lay.keyed ? e.toKey : e.to;
+      const parentKey = lay.keyed ? e.fromKey : e.from;
+      if (!childToParents.has(childKey)) childToParents.set(childKey, []);
+      childToParents.get(childKey).push(parentKey);
     }
-  }
-  for (const [a,b] of lay.spouseEdges){
-    const na = positions.get(a), nb = positions.get(b);
-    if (!na || !nb) continue;
-    const y = na.y + BOX_H/2;
-    const x1 = na.x + BOX_W, x2 = nb.x;
-    if (x1 < x2) parts.push(`<line class="link spouse" x1="${x1}" y1="${y}" x2="${x2}" y2="${y}"/>`);
-    else parts.push(`<line class="link spouse" x1="${nb.x+BOX_W}" y1="${y}" x2="${na.x}" y2="${y}"/>`);
+    // Group children by their parent set
+    const familyGroups = new Map();
+    for (const [childKey, parentKeys] of childToParents){
+      const groupKey = parentKeys.slice().sort().join('|');
+      if (!familyGroups.has(groupKey)) familyGroups.set(groupKey, { parents: parentKeys, children: [] });
+      familyGroups.get(groupKey).children.push(childKey);
+    }
+    // Draw each family group as a single shared bus at the midpoint between rows:
+    // parents drop into the bus, the bus spans the children, children drop down from it.
+    for (const [, group] of familyGroups){
+      const parentNodes = group.parents.map(k => positions.get(k)).filter(Boolean);
+      const childNodes = group.children.map(k => positions.get(k)).filter(Boolean);
+      if (!parentNodes.length || !childNodes.length) continue;
+      const parentY = Math.max(...parentNodes.map(p => p.y + BOX_H));
+      const childY = Math.min(...childNodes.map(c => c.y));
+      const busY = (parentY + childY) / 2;
+      const xs = [...parentNodes.map(p => p.x + BOX_W/2), ...childNodes.map(c => c.x + BOX_W/2)];
+      const busLeft = Math.min(...xs);
+      const busRight = Math.max(...xs);
+      for (const p of parentNodes){
+        const px = p.x + BOX_W/2;
+        parts.push(`<path class="link" d="M${px},${p.y + BOX_H} L${px},${busY}"/>`);
+      }
+      if (busLeft < busRight){
+        parts.push(`<path class="link" d="M${busLeft},${busY} L${busRight},${busY}"/>`);
+      }
+      for (const c of childNodes){
+        const cx = c.x + BOX_W/2;
+        parts.push(`<path class="link" d="M${cx},${busY} L${cx},${c.y}"/>`);
+      }
+    }
+    for (const [a,b] of lay.spouseEdges){
+      const na = positions.get(a), nb = positions.get(b);
+      if (!na || !nb) continue;
+      const y = na.y + BOX_H/2;
+      const x1 = na.x + BOX_W, x2 = nb.x;
+      if (x1 < x2) parts.push(`<line class="link spouse" x1="${x1}" y1="${y}" x2="${x2}" y2="${y}"/>`);
+      else parts.push(`<line class="link spouse" x1="${nb.x+BOX_W}" y1="${y}" x2="${na.x}" y2="${y}"/>`);
+    }
   }
   // Boxes — two-line name layout: given on top, surname (with history) below, then dates.
   for (const [, n] of positions){
@@ -1433,10 +1390,11 @@ function renderTree(){
   for (const el of svg.querySelectorAll('.person-box')){
     el.addEventListener('click', (ev) => {
       ev.stopPropagation();
+      if (suppressNextBoxClick){ suppressNextBoxClick = false; return; }
       const id = el.getAttribute('data-id');
       if (id !== state.focusId){
         state.focusId = id;
-        state._needsFit = true;
+        if (state.view !== 'all') state._needsFit = true;  // keep pan/zoom in 'all' view
       }
       render();
       if (isMobile()) showMobileSheet();
@@ -1457,21 +1415,73 @@ function escapeXml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;'
 function truncate(s, n){ return s.length > n ? s.slice(0,n-1)+'…' : s; }
 
 // Pan & zoom handlers
+function updateAllNodePos(id, x, y){
+  // Directly mutate SVG elements so dragging is smooth without a full re-render.
+  const svg = document.getElementById('tree-svg');
+  const box = svg.querySelector(`.person-box[data-id="${id}"]`);
+  if (box) box.setAttribute('transform', `translate(${x},${y})`);
+  const cx = x + BOX_W/2, cy = y + BOX_H/2;
+  for (const ln of svg.querySelectorAll(`line[data-from="${id}"]`))
+    { ln.setAttribute('x1', cx); ln.setAttribute('y1', cy); }
+  for (const ln of svg.querySelectorAll(`line[data-to="${id}"]`))
+    { ln.setAttribute('x2', cx); ln.setAttribute('y2', cy); }
+  for (const ln of svg.querySelectorAll(`line[data-spa="${id}"]`))
+    { ln.setAttribute('x1', cx); ln.setAttribute('y1', cy); }
+  for (const ln of svg.querySelectorAll(`line[data-spb="${id}"]`))
+    { ln.setAttribute('x2', cx); ln.setAttribute('y2', cy); }
+}
 function setupPanZoom(){
   const svg = document.getElementById('tree-svg');
   let dragging = false, sx=0, sy=0, ox=0, oy=0;
+  let nodeDrag = null; // {id, startClientX, startClientY, startX, startY, moved}
   svg.addEventListener('mousedown', (e) => {
+    const box = e.target.closest('.person-box');
+    if (box && state.view === 'all'){
+      // Start node-drag in the 'all' view
+      const id = box.getAttribute('data-id');
+      const cache = state.g && state.g.__allLayoutCache;
+      if (cache){
+        const pos = cache.result.positions.get(id);
+        if (pos){
+          nodeDrag = {id, startClientX:e.clientX, startClientY:e.clientY, startX:pos.x, startY:pos.y, moved:false};
+          svg.classList.add('dragging');
+        }
+      }
+      return;
+    }
     if (e.target.closest('.person-box')) return;
     dragging = true; sx=e.clientX; sy=e.clientY; ox=view.tx; oy=view.ty;
     svg.classList.add('dragging');
   });
   window.addEventListener('mousemove', (e) => {
+    if (nodeDrag){
+      const dxClient = e.clientX - nodeDrag.startClientX;
+      const dyClient = e.clientY - nodeDrag.startClientY;
+      if (!nodeDrag.moved && Math.hypot(dxClient, dyClient) > 5) nodeDrag.moved = true;
+      const newX = nodeDrag.startX + dxClient / view.scale;
+      const newY = nodeDrag.startY + dyClient / view.scale;
+      const cache = state.g && state.g.__allLayoutCache;
+      if (cache){
+        const pos = cache.result.positions.get(nodeDrag.id);
+        if (pos){ pos.x = newX; pos.y = newY; }
+      }
+      updateAllNodePos(nodeDrag.id, newX, newY);
+      return;
+    }
     if (!dragging) return;
     view.tx = ox + (e.clientX - sx);
     view.ty = oy + (e.clientY - sy);
     updateTreeTransform();
   });
-  window.addEventListener('mouseup', () => { dragging=false; svg.classList.remove('dragging'); });
+  window.addEventListener('mouseup', () => {
+    if (nodeDrag){
+      if (nodeDrag.moved) suppressNextBoxClick = true;
+      nodeDrag = null;
+      svg.classList.remove('dragging');
+      return;
+    }
+    dragging=false; svg.classList.remove('dragging');
+  });
   svg.addEventListener('wheel', (e) => {
     e.preventDefault();
     const rect = svg.getBoundingClientRect();
@@ -2274,6 +2284,127 @@ function bindToolbar(){
     if (state.dirty){ e.preventDefault(); e.returnValue=''; }
   });
 }
+
+// ============================================================================
+// SNAPSHOT FEATURE (All view)
+// ============================================================================
+function snapKey(slot){ return 'sukupuu-snap-' + slot; }
+const SNAP_DEF_KEY = 'sukupuu-snap-default';
+
+function snapSave(slot){
+  const cache = state.g && state.g.__allLayoutCache;
+  if (!cache){ alert('No layout to save — open the Kaikki view first.'); return; }
+  const data = {};
+  for (const [id, pos] of cache.result.positions) data[id] = {x:pos.x, y:pos.y};
+  localStorage.setItem(snapKey(slot), JSON.stringify(data));
+  updateSnapButtons();
+}
+
+function snapLoad(slot){
+  const raw = localStorage.getItem(snapKey(slot));
+  if (!raw) return;
+  const data = JSON.parse(raw);
+  const cache = state.g && state.g.__allLayoutCache;
+  if (!cache) return;
+  for (const [id, pos] of cache.result.positions){
+    if (data[id]){ pos.x = data[id].x; pos.y = data[id].y; }
+  }
+  renderTree();
+}
+
+function snapApplyDefault(positions){
+  const def = localStorage.getItem(SNAP_DEF_KEY);
+  if (!def) return;
+  const raw = localStorage.getItem(snapKey(def));
+  if (!raw) return;
+  const data = JSON.parse(raw);
+  for (const [id, pos] of positions){
+    if (data[id]){ pos.x = data[id].x; pos.y = data[id].y; }
+  }
+}
+
+function snapClear(slot){
+  localStorage.removeItem(snapKey(slot));
+  if (localStorage.getItem(SNAP_DEF_KEY) === String(slot))
+    localStorage.removeItem(SNAP_DEF_KEY);
+  updateSnapButtons();
+}
+
+function updateSnapButtons(){
+  if (state.view !== 'all') return;
+  const def = localStorage.getItem(SNAP_DEF_KEY);
+  for (const slot of [1,2,3]){
+    const btn = document.getElementById('snap-s' + slot);
+    if (!btn) continue;
+    const filled = !!localStorage.getItem(snapKey(slot));
+    const isDef  = def === String(slot);
+    btn.classList.toggle('filled',     filled);
+    btn.classList.toggle('is-default', isDef);
+    btn.title = filled
+      ? (isDef ? '★ Default snapshot ' : 'Snapshot ') + slot + ' — click to load, right-click for options'
+      : 'Snapshot ' + slot + ' — empty, right-click to save current layout here';
+  }
+}
+
+// Context menu for snapshot buttons
+let _snapCtxSlot = null;
+function showSnapCtx(slot, clientX, clientY){
+  _snapCtxSlot = slot;
+  const filled = !!localStorage.getItem(snapKey(slot));
+  const def    = localStorage.getItem(SNAP_DEF_KEY);
+  const ctx    = document.getElementById('snap-ctx');
+  ctx.innerHTML = '';
+  const addBtn = (label, fn) => {
+    const b = document.createElement('button');
+    b.textContent = label;
+    b.onclick = () => { hideSnapCtx(); fn(); };
+    ctx.appendChild(b);
+  };
+  if (filled) addBtn('Load snapshot ' + slot, () => snapLoad(slot));
+  addBtn(filled ? 'Overwrite with current layout' : 'Save current layout here', () => snapSave(slot));
+  if (filled && def !== String(slot)) addBtn('Set as default', () => { localStorage.setItem(SNAP_DEF_KEY, String(slot)); updateSnapButtons(); });
+  if (filled && def === String(slot)) addBtn('Remove as default', () => { localStorage.removeItem(SNAP_DEF_KEY); updateSnapButtons(); });
+  if (filled) addBtn('Clear slot', () => snapClear(slot));
+  ctx.style.display = 'flex';
+  // Position so it stays within viewport
+  const W = window.innerWidth, H = window.innerHeight;
+  ctx.style.left = '0'; ctx.style.top = '0'; // reset first
+  requestAnimationFrame(() => {
+    const r = ctx.getBoundingClientRect();
+    ctx.style.left = Math.min(clientX, W - r.width  - 8) + 'px';
+    ctx.style.top  = Math.min(clientY, H - r.height - 8) + 'px';
+  });
+}
+function hideSnapCtx(){
+  document.getElementById('snap-ctx').style.display = 'none';
+  _snapCtxSlot = null;
+}
+
+function setupSnapshots(){
+  // Left-click on filled slot = load; right-click = context menu on any slot
+  for (const slot of [1,2,3]){
+    const btn = document.getElementById('snap-s' + slot);
+    btn.addEventListener('click', () => {
+      if (localStorage.getItem(snapKey(slot))) snapLoad(slot);
+      else showSnapCtx(slot, btn.getBoundingClientRect().left, btn.getBoundingClientRect().bottom + 4);
+    });
+    btn.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      showSnapCtx(slot, e.clientX, e.clientY);
+    });
+  }
+  document.getElementById('snap-reset').addEventListener('click', () => {
+    if (state.g) state.g.__allLayoutCache = null;
+    state._needsFit = true;
+    renderTree();
+  });
+  // Dismiss context menu on outside click
+  document.addEventListener('click', (e) => {
+    if (!document.getElementById('snap-ctx').contains(e.target)) hideSnapCtx();
+  });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideSnapCtx(); });
+}
+
 function setView(v){
   state.view = v; state._needsFit = true;
   for (const id of ['btn-view-hourglass','btn-view-pedigree','btn-view-desc','btn-view-all']) document.getElementById(id).classList.remove('primary');
@@ -2281,6 +2412,11 @@ function setView(v){
   if (v==='pedigree')  document.getElementById('btn-view-pedigree').classList.add('primary');
   if (v==='descendant')document.getElementById('btn-view-desc').classList.add('primary');
   if (v==='all')       document.getElementById('btn-view-all').classList.add('primary');
+  // Hide the depth slider in 'all' view (it shows everyone regardless of depth)
+  document.getElementById('depth').closest('.group').style.display = v==='all' ? 'none' : '';
+  document.getElementById('snap-group').style.display = v==='all' ? '' : 'none';
+  if (v==='all') state._applyDefaultSnap = true;  // apply default snapshot after layout
+  updateSnapButtons();
   renderTree();
 }
 
@@ -2328,6 +2464,7 @@ function init(){
   bindToolbar();
   setupSearch();
   setupPanZoom();
+  setupSnapshots();
   // Mobile sheet: backdrop tap dismisses
   document.getElementById('editor-backdrop').addEventListener('click', hideMobileSheet);
   // Resize handler — also clear sheet state when crossing the mobile/desktop boundary
@@ -2492,5 +2629,6 @@ saveFile = async function(){
 setTimeout(() => tryRestoreLastSession(), 0);
 
 </script>
+<div id="snap-ctx"></div>
 </body>
 </html>
