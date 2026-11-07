@@ -213,6 +213,7 @@
     </div>
     <div class="group">
       <button id="btn-photos" title="" data-i18n="photoFolder">📷</button>
+      <button id="btn-github" title="ghTitle" data-i18n="github"></button>
     </div>
     <div class="spacer"></div>
     <div class="group">
@@ -640,6 +641,29 @@ const I18N = {
     pickPersonTitle:'Valitse henkilö',
     confirmDiscard:'Hylätäänkö tallentamattomat muutokset?',
     discard:'Hylkää',
+    github:'GitHub', ghTitle:'GitHub-repo', close:'Sulje',
+    ghIntro:'Sukupuu ja kuvat luetaan yksityisestä GitHub-reposta ja tallennetaan sinne. Jokainen tallennus on oma versionsa repon historiassa.',
+    ghRepo:'Repo (omistaja/nimi)', ghPath:'XML-tiedosto repossa', ghPhotoPath:'Kuvakansio repossa',
+    ghBranch:'Haara (tyhjä = oletushaara)', ghToken:'GitHub-tunnus',
+    ghTokenSaved:'tallennettu tähän selaimeen; jätä tyhjäksi, jos et vaihda',
+    ghTokenHelp:'Tunnus tallennetaan vain tämän selaimen muistiin, ei HTML-tiedostoon. Käytä fine-grained-tunnusta, joka koskee vain tätä repoa (Contents: Read and write).',
+    ghCheck:'Tarkista yhteys', ghOpen:'Avaa GitHubista', ghUpload:'Tallenna avoin sukupuu GitHubiin',
+    ghOtherFiles:'Reposta löytyi nämä XML-tiedostot:', ghOpenFile:'Avaa {p}',
+    ghForget:'Unohda yhteys', ghChecking:'Tarkistetaan…',
+    ghOk:'Yhteys toimii. Haara: {b}.',
+    ghPublic:'Varoitus: repo on julkinen. Kuka tahansa voi lukea sukupuun. Muuta repo yksityiseksi GitHubin asetuksista.',
+    ghFileFound:'XML-tiedosto löytyi reposta.', ghFileMissing:'Repossa ei ole vielä tätä XML-tiedostoa.',
+    ghNoPush:'Tunnuksella ei ole kirjoitusoikeutta repoon. Anna sille oikeus Contents: Read and write.',
+    ghBadRepo:'Anna repo muodossa omistaja/nimi.', ghNeedPath:'Anna XML-tiedoston polku repossa.', ghNeedToken:'Anna GitHub-tunnus.',
+    ghErr401:'GitHub-tunnus ei kelpaa tai se on vanhentunut.',
+    ghErr404:'Repoa tai tiedostoa ei löydy, tai tunnuksella ei ole siihen oikeutta.',
+    ghOpenFailed:'Avaus GitHubista epäonnistui: {e}',
+    ghConflict:'Tiedostoa on muutettu GitHubissa sen jälkeen, kun avasit sen. Korvataanko GitHubin versio? Korvattu versio säilyy repon historiassa.',
+    ghSaveFailed:'Tallennus GitHubiin epäonnistui: {e}\n\nLadataanko paikallinen kopio?',
+    ghSaved:'Tallennettu GitHubiin',
+    ghReplace:'Repossa on jo tiedosto {p}. Korvataanko se? Vanha versio säilyy repon historiassa.',
+    ghForgetConfirm:'Poistetaanko GitHub-asetukset ja tunnus tästä selaimesta? Repo ja sen tiedostot säilyvät GitHubissa.',
+    ghForgotten:'GitHub-yhteys poistettu tästä selaimesta',
   },
   en: {
     newFile:'New', open:'Open', save:'Save', saveAs:'Save As',
@@ -685,6 +709,29 @@ const I18N = {
     pickPersonTitle:'Pick a person',
     confirmDiscard:'Discard unsaved changes?',
     discard:'Discard',
+    github:'GitHub', ghTitle:'GitHub repository', close:'Close',
+    ghIntro:'The tree and photos are read from and saved to a private GitHub repository. Every save is a version in the repository history.',
+    ghRepo:'Repository (owner/name)', ghPath:'XML file in repository', ghPhotoPath:'Photo folder in repository',
+    ghBranch:'Branch (empty = default branch)', ghToken:'GitHub token',
+    ghTokenSaved:'saved in this browser; leave empty to keep it',
+    ghTokenHelp:'The token is stored only in this browser, not in the HTML file. Use a fine-grained token limited to this repository (Contents: Read and write).',
+    ghCheck:'Check connection', ghOpen:'Open from GitHub', ghUpload:'Save open tree to GitHub',
+    ghOtherFiles:'XML files found in the repository:', ghOpenFile:'Open {p}',
+    ghForget:'Forget connection', ghChecking:'Checking…',
+    ghOk:'Connection works. Branch: {b}.',
+    ghPublic:'Warning: the repository is public. Anyone can read the tree. Make it private in the GitHub settings.',
+    ghFileFound:'XML file found in the repository.', ghFileMissing:'The repository does not have this XML file yet.',
+    ghNoPush:'The token cannot write to this repository. Give it Contents: Read and write.',
+    ghBadRepo:'Enter the repository as owner/name.', ghNeedPath:'Enter the XML file path in the repository.', ghNeedToken:'Enter a GitHub token.',
+    ghErr401:'The GitHub token is invalid or has expired.',
+    ghErr404:'Repository or file not found, or the token has no access to it.',
+    ghOpenFailed:'Opening from GitHub failed: {e}',
+    ghConflict:'The file has changed on GitHub since you opened it. Overwrite the GitHub version? The overwritten version stays in the repository history.',
+    ghSaveFailed:'Saving to GitHub failed: {e}\n\nDownload a local copy?',
+    ghSaved:'Saved to GitHub',
+    ghReplace:'The repository already has {p}. Replace it? The old version stays in the repository history.',
+    ghForgetConfirm:'Remove the GitHub settings and token from this browser? The repository and its files stay on GitHub.',
+    ghForgotten:'GitHub connection removed from this browser',
   }
 };
 let LANG = localStorage.getItem('lang') || 'fi';
@@ -715,6 +762,7 @@ const state = {
   filename: '',                // current filename
   fileHandle: null,            // FileSystemFileHandle when available
   photoDirHandle: null,        // FileSystemDirectoryHandle for photos
+  gh: null,                    // { sha, photos } when the file was opened from GitHub
   view: 'hourglass',
   depth: 3,
   focusId: null,
@@ -723,6 +771,8 @@ const state = {
   redoStack: [],
   savedSnapshot: null,         // last saved snapshot (for dirty detection)
 };
+// GitHub settings and token live in this browser's localStorage only, never in the file.
+const GH_SETTINGS = 'sukupuu-github', GH_TOKEN = 'sukupuu-github-token', GH_ACTIVE = 'sukupuu-github-active';
 
 // We use snapshots for undo because mutations are pervasive. Snapshots are
 // strings (XML), which is cheap given the file sizes involved (~600KB).
@@ -737,7 +787,8 @@ function pushUndo(){
   state.undoStack.push(snapshot());
   if (state.undoStack.length > 100) state.undoStack.shift();
   state.redoStack.length = 0;
-  setDirty();
+  // Callers mutate right after pushUndo(), so compare against the saved state once they're done.
+  queueMicrotask(() => setDirty());
   updateUndoButtons();
 }
 function undo(){
@@ -767,7 +818,7 @@ function setDirty(){
   state.dirty = (cur !== state.savedSnapshot);
   document.getElementById('dirty').style.display = state.dirty ? '' : 'none';
   document.getElementById('dirty').textContent = state.dirty ? '● ' + t('dirty') : '';
-  document.getElementById('btn-save').disabled = !state.dirty || !state.fileHandle && !canSaveDirect();
+  document.getElementById('btn-save').disabled = !state.dirty || !state.gh && !state.fileHandle && !canSaveDirect();
   document.getElementById('btn-saveas').disabled = !state.g;
 }
 function markSaved(){
@@ -2030,9 +2081,11 @@ async function maybeDiscard(){
   });
 }
 
-function loadXml(text, name){
+function loadXml(text, name, gh = null){
   try {
     state.g = new Genealog(parseXml(text));
+    state.gh = gh;
+    if (!gh) localStorage.removeItem(GH_ACTIVE);
     state.filename = name || 'family.xml';
     state.focusId = state.g.persons.keys().next().value || null;
     state.undoStack.length = 0;
@@ -2051,6 +2104,7 @@ function loadXml(text, name){
 }
 async function saveFile(saveAs){
   if (!state.g) return;
+  if (state.gh && !saveAs) return ghSave();
   const text = serializeXml(state.g.parsed);
   if (canSaveDirect()){
     try {
@@ -2066,6 +2120,7 @@ async function saveFile(saveAs){
       await ws.close();
       state.fileHandle = handle;
       state.filename = handle.name;
+      ghDetach();
       markSaved(); render(); toast(t('saved'));
     } catch(e){ if (e.name!=='AbortError'){ alert(t('saveError')+': '+e.message); console.error(e); } }
   } else {
@@ -2076,6 +2131,7 @@ async function saveFile(saveAs){
     a.href = url; a.download = saveAs ? promptName(state.filename||'family.xml') : (state.filename||'family.xml');
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(()=>URL.revokeObjectURL(url), 1000);
+    ghDetach();
     markSaved(); render(); toast(t('saved'));
   }
 }
@@ -2100,6 +2156,7 @@ function confirmDirty(){ if (!state.dirty) return true; return confirm(t('unsave
 // ============================================================================
 const photoCache = new Map(); // filename -> URL or '__missing__'
 async function loadPhotos(){
+  if (state.gh) return loadGitHubPhotos();
   if (!state.photoDirHandle) return; // Electron has its own override below
   for (const el of document.querySelectorAll('.photo-preview, .primary-photo')){
     const fname = el.getAttribute('data-file'); if (!fname) continue;
@@ -2132,6 +2189,7 @@ async function loadPhotos(){
 function maybeShowPhotoHint(){
   if (window.electronAPI) return;                // Electron handles photos automatically
   if (state.photoDirHandle) return;              // already chosen
+  if (state.gh) return;                          // photos come from the GitHub repo
   if (!state.g) return;
   if (sessionStorage.getItem('photoHintDismissed')) return;
   // Does the XML reference any photos?
@@ -2191,7 +2249,7 @@ function renderStatus(){
       ? `${visible} / ${total} ${t('persons')}`
       : `${total} ${t('persons')}`;
   } else left.textContent = '';
-  document.getElementById('filename').textContent = state.filename || '';
+  document.getElementById('filename').textContent = (state.gh ? 'GitHub · ' : '') + (state.filename || '');
   right.textContent = t('keyboardHelp');
 }
 
@@ -2552,6 +2610,285 @@ if (window.electronAPI){
 }
 
 // ============================================================================
+// GITHUB STORAGE (browser only; the Electron wrapper has its own in main.js)
+// ============================================================================
+function ghSettings(){ try { return JSON.parse(localStorage.getItem(GH_SETTINGS)); } catch { return null; } }
+function ghToken(){ return localStorage.getItem(GH_TOKEN); }
+const ghKey = (c) => `${c.owner}/${c.repo}@${c.branch}:${c.path}`;
+const ghJoin = (...parts) => parts.filter(Boolean).join('/');
+const ghEnc = (p) => p.split('/').map(encodeURIComponent).join('/');
+const ghClean = (p) => String(p || '').trim().replace(/^\/+|\/+$/g, '');
+const ghBaseName = (p) => p.split('/').pop();
+
+function ghBytesToB64(bytes){
+  let s = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+function ghB64ToBytes(b64){
+  const s = atob(b64.replace(/\s/g, ''));
+  const bytes = new Uint8Array(s.length);
+  for (let i = 0; i < s.length; i++) bytes[i] = s.charCodeAt(i);
+  return bytes;
+}
+
+function ghClient(cfg, token){
+  const base = `https://api.github.com/repos/${encodeURIComponent(cfg.owner)}/${encodeURIComponent(cfg.repo)}`;
+  const ref = cfg.branch ? `?ref=${encodeURIComponent(cfg.branch)}` : '';
+  // no-store: GitHub lets browsers cache API responses for 60 s, which would hand back stale shas.
+  async function req(method, url, { body, accept = 'application/vnd.github+json' } = {}){
+    const res = await fetch(base + url, {
+      method, cache: 'no-store',
+      headers: {
+        'Accept': accept,
+        'Authorization': `Bearer ${token}`,
+        'X-GitHub-Api-Version': '2022-11-28',
+        ...(body ? { 'Content-Type': 'application/json' } : {}),
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    if (!res.ok){
+      let msg = res.statusText;
+      try { msg = (await res.json()).message || msg; } catch {}
+      const e = new Error(msg); e.status = res.status; throw e;
+    }
+    return res;
+  }
+  const json = async (...args) => (await req(...args)).json();
+  const blob = async (sha) => (await req('GET', `/git/blobs/${sha}`, { accept: 'application/vnd.github.raw+json' })).blob();
+  return {
+    repoInfo: () => json('GET', ''),
+    // The contents API only inlines files up to 1 MB; larger ones come from the blob API.
+    async readText(path){
+      const m = await json('GET', `/contents/${ghEnc(path)}${ref}`);
+      if (Array.isArray(m) || m.type !== 'file'){ const e = new Error(path); e.status = 404; throw e; }
+      const bytes = m.encoding === 'base64' && m.content
+        ? ghB64ToBytes(m.content)
+        : new Uint8Array(await (await blob(m.sha)).arrayBuffer());
+      return { text: new TextDecoder().decode(bytes), sha: m.sha };
+    },
+    async fileSha(path){
+      try { const m = await json('GET', `/contents/${ghEnc(path)}${ref}`); return Array.isArray(m) ? null : m.sha; }
+      catch (e){ if (e.status === 404) return null; throw e; }
+    },
+    // Passing the previous sha makes GitHub reject the write (409) if the file changed meanwhile.
+    async writeText(path, text, sha, message){
+      const r = await json('PUT', `/contents/${ghEnc(path)}`, { body: {
+        message, content: ghBytesToB64(new TextEncoder().encode(text)),
+        ...(cfg.branch ? { branch: cfg.branch } : {}), ...(sha ? { sha } : {}),
+      }});
+      return r.content.sha;
+    },
+    async listDir(path){
+      try {
+        const items = await json('GET', `/contents/${ghEnc(path)}${ref}`);
+        return Array.isArray(items) ? items.filter(i => i.type === 'file') : [];
+      } catch (e){ if (e.status === 404) return []; throw e; }
+    },
+    blob,
+  };
+}
+function ghErrorText(e){
+  if (e.status === 401) return t('ghErr401');
+  if (e.status === 403 || e.status === 404) return `${t('ghErr404')} (${e.message})`;
+  return e.message;
+}
+const ghPhotoMap = (items) => new Map(items.map(i => [i.name.toLowerCase(), i.sha]));
+
+function ghDetach(){
+  state.gh = null;
+  localStorage.removeItem(GH_ACTIVE);
+}
+
+function ghAutoOpen(){
+  if (window.electronAPI || !localStorage.getItem(GH_ACTIVE) || !ghSettings() || !ghToken()) return false;
+  ghOpen();
+  return true;
+}
+
+async function ghOpen(){
+  const cfg = ghSettings(), token = ghToken();
+  if (!cfg || !token){ ghSettingsModal(); return; }
+  if (await maybeDiscard() === false) return;
+  try {
+    const c = ghClient(cfg, token);
+    const [{ text, sha }, photos] = await Promise.all([c.readText(cfg.path), c.listDir(cfg.photoPath)]);
+    photoCache.clear();
+    state.fileHandle = null;
+    loadXml(text, ghBaseName(cfg.path), { sha, photos: ghPhotoMap(photos) });
+    if (state.gh) localStorage.setItem(GH_ACTIVE, '1');
+  } catch (e){
+    alert(t('ghOpenFailed', { e: ghErrorText(e) }));
+  }
+}
+
+async function ghSave(){
+  const cfg = ghSettings(), token = ghToken();
+  const text = serializeXml(state.g.parsed);
+  const message = `Sukupuu: päivitetty ${ghBaseName(cfg ? cfg.path : state.filename)}`;
+  try {
+    if (!cfg || !token) throw new Error(t('ghNeedToken'));
+    const c = ghClient(cfg, token);
+    try {
+      state.gh.sha = await c.writeText(cfg.path, text, state.gh.sha, message);
+    } catch (e){
+      if (e.status !== 409) throw e;
+      if (!confirm(t('ghConflict'))) return;
+      state.gh.sha = await c.writeText(cfg.path, text, await c.fileSha(cfg.path), message);
+    }
+    markSaved(); render(); toast(t('ghSaved'));
+  } catch (e){
+    if (!confirm(t('ghSaveFailed', { e: ghErrorText(e) }))) return;
+    const a = document.createElement('a');
+    const url = URL.createObjectURL(new Blob([text], { type: 'text/xml;charset=utf-8' }));
+    a.href = url; a.download = state.filename || 'family.xml';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+}
+
+async function ghUpload(){
+  const cfg = ghSettings(), token = ghToken();
+  if (!state.g || !cfg || !token) return;
+  const c = ghClient(cfg, token);
+  try {
+    const existing = await c.fileSha(cfg.path);
+    if (existing && !confirm(t('ghReplace', { p: cfg.path }))) return;
+    const sha = await c.writeText(cfg.path, serializeXml(state.g.parsed), existing, `Sukupuu: lisätty ${ghBaseName(cfg.path)}`);
+    state.gh = { sha, photos: ghPhotoMap(await c.listDir(cfg.photoPath)) };
+    state.fileHandle = null;
+    state.filename = ghBaseName(cfg.path);
+    localStorage.setItem(GH_ACTIVE, '1');
+    photoCache.clear();
+    markSaved(); render(); toast(t('ghSaved'));
+  } catch (e){
+    alert(t('saveError') + ': ' + ghErrorText(e));
+  }
+}
+
+const GH_MIME = { jpg:'image/jpeg', jpeg:'image/jpeg', png:'image/png', gif:'image/gif', webp:'image/webp', heic:'image/heic', heif:'image/heif' };
+async function loadGitHubPhotos(){
+  const cfg = ghSettings(), token = ghToken();
+  if (!cfg || !token) return;
+  for (const el of document.querySelectorAll('.photo-preview, .primary-photo')){
+    const fname = el.getAttribute('data-file'); if (!fname) continue;
+    const isPrimary = el.classList.contains('primary-photo');
+    let url = photoCache.get(fname);
+    if (!url){
+      const sha = state.gh && state.gh.photos.get(fname.toLowerCase());
+      try {
+        const type = GH_MIME[fname.toLowerCase().split('.').pop()] || '';
+        url = sha ? URL.createObjectURL(new Blob([await ghClient(cfg, token).blob(sha)], { type })) : '__missing__';
+      } catch { url = '__missing__'; }
+      photoCache.set(fname, url);
+    }
+    el.innerHTML = url === '__missing__'
+      ? (isPrimary ? '' : `<div class="missing-photo">${escapeHtml(t('photoMissing', { file: fname }))}</div>`)
+      : `<img src="${url}" class="${isPrimary ? 'photo-large' : 'photo-thumb'}">`;
+  }
+}
+
+function ghSettingsModal(){
+  const cfg = ghSettings() || {};
+  const field = (id, label, value, type = 'text') => `<div class="field" style="margin-top:8px">
+      <label for="${id}">${escapeHtml(label)}</label>
+      <input id="${id}" type="${type}" value="${escapeAttr(value || '')}" spellcheck="false" autocomplete="off"></div>`;
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  bg.innerHTML = `<div class="modal" style="width:480px">
+    <h3>${escapeHtml(t('ghTitle'))}</h3>
+    <div style="font-size:13px;color:var(--muted)">${escapeHtml(t('ghIntro'))}</div>
+    ${field('gh-repo', t('ghRepo'), cfg.owner ? `${cfg.owner}/${cfg.repo}` : '')}
+    ${field('gh-path', t('ghPath'), cfg.path || (state.g && state.filename) || 'sukupuu.xml')}
+    ${field('gh-photos', t('ghPhotoPath'), cfg.owner ? cfg.photoPath : 'kuvat')}
+    ${field('gh-branch', t('ghBranch'), cfg.branch)}
+    ${field('gh-token', t('ghToken') + (ghToken() ? ` (${t('ghTokenSaved')})` : ''), '', 'password')}
+    <div style="font-size:12px;color:var(--muted);margin-top:6px">${escapeHtml(t('ghTokenHelp'))}</div>
+    <div id="gh-status" style="margin-top:10px;font-size:13px;white-space:pre-line"></div>
+    <div id="gh-files" style="display:flex;flex-direction:column;align-items:flex-start;gap:6px;margin-top:8px"></div>
+    <div class="actions">
+      <button data-act="forget" style="margin-right:auto">${escapeHtml(t('ghForget'))}</button>
+      <button data-act="close">${escapeHtml(t('close'))}</button>
+      <button data-act="check" class="primary">${escapeHtml(t('ghCheck'))}</button>
+    </div>
+    <div class="actions" id="gh-after" style="display:none">
+      <button data-act="upload">${escapeHtml(t('ghUpload'))}</button>
+      <button data-act="open" class="primary">${escapeHtml(t('ghOpen'))}</button>
+    </div></div>`;
+  document.body.appendChild(bg);
+  const $ = (sel) => bg.querySelector(sel);
+  const status = (msg, bad) => { const s = $('#gh-status'); s.textContent = msg; s.style.color = bad ? 'var(--danger)' : ''; };
+  const showAfter = (canOpen) => {
+    $('[data-act=open]').style.display = canOpen ? '' : 'none';
+    $('[data-act=upload]').style.display = state.g && !state.gh ? '' : 'none';
+    $('#gh-after').style.display = '';
+  };
+  if (cfg.owner && ghToken()) showAfter(true);
+  setTimeout(() => $(cfg.owner ? '#gh-token' : '#gh-repo').focus(), 50);
+
+  async function check(){
+    const m = $('#gh-repo').value.trim()
+      .replace(/^https?:\/\/github\.com\//i, '').replace(/\.git$/i, '').replace(/\/+$/, '')
+      .match(/^([\w.-]+)\/([\w.-]+)$/);
+    if (!m) return status(t('ghBadRepo'), true);
+    const path = ghClean($('#gh-path').value);
+    if (!path) return status(t('ghNeedPath'), true);
+    const token = $('#gh-token').value.trim() || ghToken();
+    if (!token) return status(t('ghNeedToken'), true);
+    status(t('ghChecking'));
+    $('#gh-after').style.display = 'none';
+    $('#gh-files').innerHTML = '';
+    try {
+      const repo = { owner: m[1], repo: m[2] };
+      const info = await ghClient(repo, token).repoInfo();
+      if (!info.permissions || !info.permissions.push) return status(t('ghNoPush'), true);
+      const next = { ...repo, branch: $('#gh-branch').value.trim() || info.default_branch, path, photoPath: ghClean($('#gh-photos').value) };
+      const exists = !!(await ghClient(next, token).fileSha(path));
+      const others = exists ? [] : (await ghClient(next, token).listDir('')).filter(f => /\.xml$/i.test(f.name));
+      // A tree opened from a different repo or path must not be saved over this one.
+      const prev = ghSettings();
+      if (state.gh && prev && ghKey(prev) !== ghKey(next)){ ghDetach(); setDirty(); renderStatus(); }
+      localStorage.setItem(GH_SETTINGS, JSON.stringify(next));
+      localStorage.setItem(GH_TOKEN, token);
+      $('#gh-token').value = '';
+      $('#gh-branch').value = next.branch;
+      status([t('ghOk', { b: next.branch }), info.private ? '' : t('ghPublic'), t(exists ? 'ghFileFound' : 'ghFileMissing'),
+        others.length ? t('ghOtherFiles') : ''].filter(Boolean).join('\n'), !info.private);
+      $('#gh-files').innerHTML = others.map(f =>
+        `<button class="primary" data-act="openpath" data-path="${escapeAttr(f.path)}">${escapeHtml(t('ghOpenFile', { p: f.path }))}</button>`).join('');
+      showAfter(exists);
+    } catch (e){
+      status(ghErrorText(e), true);
+    }
+  }
+
+  bg.addEventListener('click', (e) => {
+    const act = e.target.dataset && e.target.dataset.act;
+    if (e.target === bg || act === 'close') bg.remove();
+    else if (act === 'check') check();
+    else if (act === 'open'){ bg.remove(); ghOpen(); }
+    else if (act === 'openpath'){
+      localStorage.setItem(GH_SETTINGS, JSON.stringify({ ...ghSettings(), path: e.target.dataset.path }));
+      bg.remove(); ghOpen();
+    }
+    else if (act === 'upload'){ bg.remove(); ghUpload(); }
+    else if (act === 'forget'){
+      if (!confirm(t('ghForgetConfirm'))) return;
+      for (const k of [GH_SETTINGS, GH_TOKEN, GH_ACTIVE]) localStorage.removeItem(k);
+      ghDetach(); setDirty(); renderStatus();
+      bg.remove(); toast(t('ghForgotten'));
+    }
+  });
+  bg.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') check();
+    else if (e.key === 'Escape') bg.remove();
+  });
+}
+
+if (window.electronAPI) document.getElementById('btn-github').style.display = 'none';
+else document.getElementById('btn-github').addEventListener('click', ghSettingsModal);
+
+// ============================================================================
 // BROWSER PERSISTENCE (FileSystemFileHandle in IndexedDB) — Chromium-only
 // ============================================================================
 // In Electron, persistence is handled by main.js. In Chromium browsers we save the
@@ -2610,8 +2947,8 @@ async function tryRestorePhotoDir(dirHandle){
 }
 // Hook into existing openFile/saveFile to persist handles after success
 const _origLoadXml = loadXml;
-loadXml = function(text, name){
-  _origLoadXml(text, name);
+loadXml = function(){
+  _origLoadXml.apply(null, arguments);
   if (state.fileHandle && state.fileHandle.queryPermission){ idbSet('lastFile', state.fileHandle).catch(()=>{}); }
 };
 const _origPickPhotoFolder = pickPhotoFolder;
@@ -2625,8 +2962,8 @@ saveFile = async function(){
   await _origSaveFile.apply(null, arguments);
   if (state.fileHandle && state.fileHandle.queryPermission){ idbSet('lastFile', state.fileHandle).catch(()=>{}); }
 };
-// Run restore after init
-setTimeout(() => tryRestoreLastSession(), 0);
+// Run restore after init; a tree last opened from GitHub is reopened from there instead
+setTimeout(() => { if (!ghAutoOpen()) tryRestoreLastSession(); }, 0);
 
 </script>
 <div id="snap-ctx"></div>
