@@ -107,6 +107,44 @@
   .tree-empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--muted);text-align:center;padding:20px;gap:12px}
   .tree-empty h2{margin:0;color:var(--ink);font-weight:600}
 
+  .card-view{position:absolute;inset:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:12px 12px calc(28px + env(safe-area-inset-bottom));background:var(--bg)}
+  .card-view[hidden]{display:none}
+  .cv-inner{max-width:560px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+  .cv-trail{display:flex;align-items:center;gap:2px;overflow-x:auto;scrollbar-width:none;white-space:nowrap;font-size:12px;color:var(--muted);min-height:24px}
+  .cv-trail::-webkit-scrollbar,.cv-chips::-webkit-scrollbar{display:none}
+  .cv-trail button{border:0;background:none;padding:4px;color:var(--accent);font-size:12px}
+  .cv-trail .cur{padding:4px;color:var(--ink);font-weight:600}
+  .cv-section h4{margin:0 0 6px 2px;font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);font-weight:600}
+  .cv-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .cv-list{display:flex;flex-direction:column;gap:6px}
+  .cv-card{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:8px 10px;border-radius:10px;background:var(--panel);border:1px solid var(--line);border-left-width:4px;min-height:58px;box-shadow:var(--shadow)}
+  .cv-card:hover{background:var(--hover)}
+  .cv-card.male{border-left-color:var(--maleBorder)}
+  .cv-card.female{border-left-color:var(--femaleBorder)}
+  .cv-avatar{position:relative;flex:0 0 40px;width:40px;height:40px;border-radius:50%;background:var(--soft2);color:var(--muted);display:flex;align-items:center;justify-content:center;font-weight:600;font-size:14px;overflow:hidden}
+  .male .cv-avatar{background:var(--male);color:var(--maleBorder)}
+  .female .cv-avatar{background:var(--female);color:var(--femaleBorder)}
+  .cv-avatar .card-photo,.cv-avatar .card-photo img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;max-width:none;max-height:none;border:0;border-radius:0;box-shadow:none;margin:0}
+  .cv-text{display:flex;flex-direction:column;min-width:0;line-height:1.3}
+  .cv-given{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .cv-surname{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .cv-years{font-size:12px;color:var(--muted)}
+  .cv-more{margin-left:auto;padding-left:6px;color:var(--muted);font-size:12px;white-space:nowrap}
+  .cv-add{width:100%;min-height:44px;border:1px dashed var(--line);background:transparent;color:var(--muted);border-radius:10px}
+  .cv-focus{background:var(--panel);border:2px solid var(--focusBorder);border-radius:16px;padding:18px 14px;display:flex;flex-direction:column;align-items:center;text-align:center;gap:4px;box-shadow:var(--shadow)}
+  .cv-focus .cv-avatar{flex:0 0 112px;width:112px;height:112px;font-size:34px;margin-bottom:6px}
+  .cv-focus .cv-given{font-size:20px;font-weight:700;white-space:normal}
+  .cv-focus .cv-surname{font-size:15px;white-space:normal}
+  .cv-facts{margin-top:6px;font-size:13px;display:flex;flex-direction:column;gap:2px}
+  .cv-facts .muted{color:var(--muted)}
+  .cv-actions{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;justify-content:center}
+  .cv-actions button{min-height:38px}
+  .cv-family{background:var(--soft);border-radius:12px;padding:8px;display:flex;flex-direction:column;gap:6px}
+  .cv-marr{font-size:12px;color:var(--muted);padding:0 4px}
+  .cv-kids{display:flex;flex-direction:column;gap:6px;margin-left:18px;padding-left:10px;border-left:2px solid var(--line)}
+  .cv-chips{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding:2px 2px 6px}
+  .cv-chips .cv-card{width:auto;flex:0 0 auto;max-width:230px}
+
   .person-box{cursor:pointer}
   .person-box rect{fill:var(--panel);stroke:var(--line);stroke-width:1;rx:6;ry:6}
   .person-box.male rect{fill:var(--male);stroke:var(--maleBorder)}
@@ -193,6 +231,7 @@
     </div>
     <div class="group">
       <label data-i18n="view"></label>
+      <button id="btn-view-card" data-i18n="viewCard"></button>
       <button id="btn-view-hourglass" data-i18n="viewHourglass" class="primary"></button>
       <button id="btn-view-pedigree" data-i18n="viewPedigree"></button>
       <button id="btn-view-desc" data-i18n="viewDescendant"></button>
@@ -235,6 +274,7 @@
   <div class="main">
     <div class="tree-pane" id="tree-pane">
       <svg class="tree-svg" id="tree-svg" xmlns="http://www.w3.org/2000/svg"></svg>
+      <div class="card-view" id="card-view" hidden></div>
       <div class="tree-empty" id="tree-empty">
         <h2 data-i18n="welcomeTitle"></h2>
         <p data-i18n="welcomeBody"></p>
@@ -606,7 +646,9 @@ const I18N = {
   fi: {
     newFile:'Uusi', open:'Avaa', save:'Tallenna', saveAs:'Tallenna nimellä',
     undo:'Kumoa', redo:'Tee uudelleen',
-    view:'Näkymä', viewHourglass:'Tiimalasi', viewPedigree:'Sukutaulu', viewDescendant:'Jälkeläiset', viewAll:'Kaikki',
+    view:'Näkymä', viewHourglass:'Tiimalasi', viewPedigree:'Sukutaulu', viewDescendant:'Jälkeläiset', viewAll:'Kaikki', viewCard:'Perhe',
+    cardEdit:'Muokkaa tietoja', cardSiblings:'Sisarukset', cardOtherChildren:'Muut lapset',
+    cardMarried:'Vihitty', bornAbbr:'s.', diedAbbr:'k.',
     generations:'Sukupolvet', search:'Etsi nimellä…', addPerson:'Lisää henkilö',
     selectPerson:'Valitse henkilö sukupuusta tai aloita lisäämällä uusi.',
     welcomeTitle:'Sukupuu',
@@ -678,7 +720,9 @@ const I18N = {
   en: {
     newFile:'New', open:'Open', save:'Save', saveAs:'Save As',
     undo:'Undo', redo:'Redo',
-    view:'View', viewHourglass:'Hourglass', viewPedigree:'Pedigree', viewDescendant:'Descendants', viewAll:'All',
+    view:'View', viewHourglass:'Hourglass', viewPedigree:'Pedigree', viewDescendant:'Descendants', viewAll:'All', viewCard:'Family',
+    cardEdit:'Edit details', cardSiblings:'Siblings', cardOtherChildren:'Other children',
+    cardMarried:'Married', bornAbbr:'b.', diedAbbr:'d.',
     generations:'Generations', search:'Search by name…', addPerson:'Add person',
     selectPerson:'Select a person from the tree, or start by adding one.',
     welcomeTitle:'Family Tree',
@@ -1300,6 +1344,10 @@ let suppressNextBoxClick = false; // set when a node-drag ends so the click does
 function renderTree(){
   const svg = document.getElementById('tree-svg');
   const empty = document.getElementById('tree-empty');
+  const cards = state.view === 'card' && !!state.g;
+  document.getElementById('card-view').hidden = !cards;
+  svg.style.display = cards ? 'none' : '';
+  if (cards){ empty.style.display = 'none'; renderCards(); return; }
   if (!state.g){
     empty.style.display = '';
     svg.innerHTML = '';
@@ -1466,6 +1514,132 @@ function renderTree(){
     });
   }
 }
+// ============================================================================
+// FAMILY CARD VIEW: one family at a time, scrolls vertically (default on phones)
+// ============================================================================
+let cardTrail = [];
+
+function fmtDate(d){
+  if (!d) return '';
+  const y = d.slice(0, 4), m = +d.slice(4, 6), day = +d.slice(6, 8);
+  return day ? `${day}.${m}.${y}` : m ? `${m}/${y}` : y;
+}
+function cvFact(abbr, date, place){
+  const s = [fmtDate(date), place].filter(Boolean).join(' ');
+  return s ? `<div><span class="muted">${escapeHtml(abbr)}</span> ${escapeHtml(s)}</div>` : '';
+}
+// The data marks the call name with "*" (e.g. "Maire*Tuulikki"); drop the marker for display.
+const cvGiven = (s) => (s || '').replace(/\*\s*/g, ' ').trim() || '?';
+function cvSexClass(p){ const s = state.g.sex(p); return s === 'M' ? 'male' : s === 'F' ? 'female' : ''; }
+function cvAvatar(p){
+  const pn = state.g.displayNameParts(p);
+  const initials = ((pn.given || '').trim()[0] || '') + ((state.g.surname(p) || '').trim()[0] || '');
+  const ph = state.g.events(p).find(e => (e.tag === 'PHOT' || e.tag === 'PHOTO') && e.mediafilename);
+  return `<span class="cv-avatar">${escapeHtml(initials.toUpperCase() || '?')}${ph ? `<span class="card-photo" data-file="${escapeAttr(ph.mediafilename)}"></span>` : ''}</span>`;
+}
+function cvCard(id, more = ''){
+  const p = state.g.persons.get(id);
+  if (!p) return '';
+  const pn = state.g.displayNameParts(p);
+  const by = state.g.birthYear(p), dy = state.g.deathYear(p);
+  const years = (by || dy) ? `${by || '?'}–${dy || ''}` : '';
+  return `<button class="cv-card ${cvSexClass(p)}" data-id="${escapeAttr(id)}">
+    ${cvAvatar(p)}
+    <span class="cv-text"><span class="cv-given">${escapeHtml(cvGiven(pn.given))}</span>
+      <span class="cv-surname">${escapeHtml(pn.surname)}</span>
+      ${years ? `<span class="cv-years">${escapeHtml(years)}</span>` : ''}</span>
+    ${more ? `<span class="cv-more">${escapeHtml(more)}</span>` : ''}
+  </button>`;
+}
+
+function renderCards(){
+  const box = document.getElementById('card-view');
+  const g = state.g, id = state.focusId;
+  if (!g || !id || !g.persons.has(id)){ box.innerHTML = `<div class="empty">${escapeHtml(t('selectPerson'))}</div>`; return; }
+
+  cardTrail = cardTrail.filter(x => g.persons.has(x));
+  const at = cardTrail.indexOf(id);
+  if (at >= 0) cardTrail.length = at + 1; else cardTrail.push(id);
+  if (cardTrail.length > 6) cardTrail = cardTrail.slice(-6);
+
+  const p = g.persons.get(id);
+  const pn = g.displayNameParts(p);
+  const events = g.events(p);
+  const birth = events.find(e => e.tag === 'BIRT'), death = events.find(e => e.tag === 'DEAT');
+  const occupations = events.filter(e => e.tag === 'OCCU' && e.description).flatMap(e => e.description.split(';')).map(s => s.trim()).filter(Boolean);
+  const byBirth = (a, b) => (g.birthYear(g.persons.get(a)) || '9999').localeCompare(g.birthYear(g.persons.get(b)) || '9999');
+  const parents = g.parentsOf(id);
+  const spouses = g.spousesOf(id);
+  const children = g.childrenOf(id).sort(byBirth);
+  const siblings = [...new Set(parents.flatMap(pid => g.childrenOf(pid)))].filter(c => c !== id).sort(byBirth);
+  const families = spouses.map(sp => ({ sp, kids: children.filter(c => g.parentsOf(c).includes(sp.id)) }));
+  const otherKids = children.filter(c => !families.some(f => f.kids.includes(c)));
+  const up = (pid) => g.parentsOf(pid).length ? '↑' : '';
+  const down = (cid) => { const n = g.childrenOf(cid).length; return n ? `↓ ${n}` : ''; };
+  const section = (title, body) => `<div class="cv-section"><h4>${escapeHtml(title)}</h4>${body}</div>`;
+  const name = (x) => cvGiven(g.displayNameParts(g.persons.get(x)).given);
+
+  const trail = cardTrail.length > 1 ? `<div class="cv-trail">${cardTrail.map((x, i) =>
+    i === cardTrail.length - 1 ? `<span class="cur">${escapeHtml(name(x))}</span>`
+      : `<button data-id="${escapeAttr(x)}">${escapeHtml(name(x))}</button><span>›</span>`).join('')}</div>` : '';
+
+  const parentCards = parents.map(pid => cvCard(pid, up(pid)));
+  if (parentCards.length < 2) parentCards.push(`<button class="cv-add" data-cv="add-parent">+ ${escapeHtml(t('addParent'))}</button>`);
+
+  const familyHtml = families.map(({ sp, kids }) => {
+    const bd = sp.node.child('begindate');
+    const marr = [fmtDate(bd ? bd.childText('start') : ''), sp.node.childText('beginplace')].filter(Boolean).join(' ');
+    return `<div class="cv-family">
+      ${cvCard(sp.id)}
+      ${marr ? `<div class="cv-marr">${escapeHtml(t('cardMarried'))} ${escapeHtml(marr)}</div>` : ''}
+      ${kids.length ? `<div class="cv-kids">${kids.map(c => cvCard(c, down(c))).join('')}</div>` : ''}
+    </div>`;
+  }).join('');
+
+  box.innerHTML = `<div class="cv-inner">
+    ${trail}
+    ${section(t('parents'), `<div class="cv-row">${parentCards.join('')}</div>`)}
+    <div class="cv-focus ${cvSexClass(p)}">
+      ${cvAvatar(p)}
+      <div class="cv-given">${escapeHtml(cvGiven(pn.given))}</div>
+      <div class="cv-surname">${escapeHtml(pn.surname)}</div>
+      <div class="cv-facts">
+        ${birth ? cvFact(t('bornAbbr'), birth.date, birth.place) : ''}
+        ${death ? cvFact(t('diedAbbr'), death.date, death.place) : ''}
+        ${occupations.length ? `<div>${escapeHtml(occupations.join(', '))}</div>` : ''}
+      </div>
+      <div class="cv-actions">
+        <button class="primary" data-cv="edit">${escapeHtml(t('cardEdit'))}</button>
+        <button data-cv="photo">📷 ${escapeHtml(t('addPhoto'))}</button>
+      </div>
+    </div>
+    ${siblings.length ? section(`${t('cardSiblings')} (${siblings.length})`, `<div class="cv-chips">${siblings.map(s => cvCard(s)).join('')}</div>`) : ''}
+    ${section(t('spouses'), `<div class="cv-list">${familyHtml}<button class="cv-add" data-cv="add-spouse">+ ${escapeHtml(t('addSpouse'))}</button></div>`)}
+    ${section(families.length && otherKids.length ? t('cardOtherChildren') : t('children'),
+      `<div class="cv-list">${otherKids.map(c => cvCard(c, down(c))).join('')}<button class="cv-add" data-cv="add-child">+ ${escapeHtml(t('addChild'))}</button></div>`)}
+  </div>`;
+  loadPhotos();
+}
+
+function setupCardView(){
+  const box = document.getElementById('card-view');
+  box.addEventListener('click', (e) => {
+    const act = e.target.closest('[data-cv]');
+    if (act){
+      const a = act.dataset.cv;
+      if (a === 'edit'){ renderEditor(); loadPhotos(); showMobileSheet(); }
+      else if (a === 'photo') addPhotoTo(state.focusId, null);
+      else handleAddRelation(a, state.focusId, act);
+      return;
+    }
+    const card = e.target.closest('[data-id]');
+    if (!card || card.dataset.id === state.focusId) return;
+    state.focusId = card.dataset.id;
+    render();
+    box.scrollTop = 0;
+  });
+}
+
 function isMobile(){ return window.matchMedia('(max-width:768px)').matches; }
 function showMobileSheet(){
   if (!isMobile()) return;
@@ -2177,9 +2351,9 @@ const photoCache = new Map(); // filename -> URL or '__missing__'
 async function loadPhotos(){
   if (state.gh) return loadGitHubPhotos();
   if (!state.photoDirHandle) return; // Electron has its own override below
-  for (const el of document.querySelectorAll('.photo-preview, .primary-photo')){
+  for (const el of document.querySelectorAll('.photo-preview, .primary-photo, .card-photo')){
     const fname = el.getAttribute('data-file'); if (!fname) continue;
-    const isPrimary = el.classList.contains('primary-photo');
+    const isPrimary = !el.classList.contains('photo-preview');
     const cls = isPrimary ? 'photo-large' : 'photo-thumb';
     const cached = photoCache.get(fname);
     if (cached === '__missing__'){ el.innerHTML = isPrimary ? '' : `<div class="missing-photo">${escapeHtml(t('photoMissing',{file:fname}))}</div>`; continue; }
@@ -2414,6 +2588,7 @@ function bindToolbar(){
       render();
     });
   });
+  document.getElementById('btn-view-card').addEventListener('click',      () => setView('card'));
   document.getElementById('btn-view-hourglass').addEventListener('click', () => setView('hourglass'));
   document.getElementById('btn-view-pedigree').addEventListener('click',  () => setView('pedigree'));
   document.getElementById('btn-view-desc').addEventListener('click',      () => setView('descendant'));
@@ -2591,13 +2766,14 @@ function setupSnapshots(){
 
 function setView(v){
   state.view = v; state._needsFit = true;
-  for (const id of ['btn-view-hourglass','btn-view-pedigree','btn-view-desc','btn-view-all']) document.getElementById(id).classList.remove('primary');
+  for (const id of ['btn-view-card','btn-view-hourglass','btn-view-pedigree','btn-view-desc','btn-view-all']) document.getElementById(id).classList.remove('primary');
+  if (v==='card')      document.getElementById('btn-view-card').classList.add('primary');
   if (v==='hourglass') document.getElementById('btn-view-hourglass').classList.add('primary');
   if (v==='pedigree')  document.getElementById('btn-view-pedigree').classList.add('primary');
   if (v==='descendant')document.getElementById('btn-view-desc').classList.add('primary');
   if (v==='all')       document.getElementById('btn-view-all').classList.add('primary');
   // Hide the depth slider in 'all' view (it shows everyone regardless of depth)
-  document.getElementById('depth').closest('.group').style.display = v==='all' ? 'none' : '';
+  document.getElementById('depth').closest('.group').style.display = v==='all' || v==='card' ? 'none' : '';
   document.getElementById('snap-group').style.display = v==='all' ? '' : 'none';
   if (v==='all') state._applyDefaultSnap = true;  // apply default snapshot after layout
   updateSnapButtons();
@@ -2649,6 +2825,8 @@ function init(){
   setupSearch();
   setupPanZoom();
   setupSnapshots();
+  setupCardView();
+  if (isMobile() && window.matchMedia('(orientation: portrait)').matches) setView('card');
   // Mobile sheet: backdrop tap dismisses
   document.getElementById('editor-backdrop').addEventListener('click', hideMobileSheet);
   // Resize handler — also clear sheet state when crossing the mobile/desktop boundary
@@ -2714,9 +2892,9 @@ if (window.electronAPI){
   // Photo loading override: ask main to find the photo (it knows xmlDir + kuvat fallbacks)
   window.loadPhotos = loadPhotos = async function(){
     if (!window.__electronXmlDir && !window.__electronPhotoBase) return;
-    for (const el of document.querySelectorAll('.photo-preview, .primary-photo')){
+    for (const el of document.querySelectorAll('.photo-preview, .primary-photo, .card-photo')){
       const fname = el.getAttribute('data-file'); if (!fname) continue;
-      const isPrimary = el.classList.contains('primary-photo');
+      const isPrimary = !el.classList.contains('photo-preview');
       const cls = isPrimary ? 'photo-large' : 'photo-thumb';
       const cached = photoCache.get(fname);
       if (cached === '__missing__'){ el.innerHTML = isPrimary ? '' : `<div class="missing-photo">${escapeHtml(t('photoMissing',{file:fname}))}</div>`; continue; }
@@ -2897,23 +3075,26 @@ const GH_MIME = { jpg:'image/jpeg', jpeg:'image/jpeg', png:'image/png', gif:'ima
 async function loadGitHubPhotos(){
   const cfg = ghSettings(), token = ghToken();
   if (!cfg || !token) return;
-  for (const el of document.querySelectorAll('.photo-preview, .primary-photo')){
-    const fname = el.getAttribute('data-file'); if (!fname) continue;
-    const isPrimary = el.classList.contains('primary-photo');
+  await Promise.all([...document.querySelectorAll('.photo-preview, .primary-photo, .card-photo')].map(async el => {
+    const fname = el.getAttribute('data-file'); if (!fname) return;
+    const isPrimary = !el.classList.contains('photo-preview');
     let url = photoCache.get(fname);
     if (!url){
-      const sha = state.gh && state.gh.photos.get(fname.toLowerCase());
-      try {
-        const type = GH_MIME[fname.toLowerCase().split('.').pop()] || '';
-        url = sha ? URL.createObjectURL(new Blob([await ghClient(cfg, token).blob(sha)], { type })) : '__missing__';
-      } catch { url = '__missing__'; }
-      photoCache.set(fname, url);
+      if (!ghPhotoPending.has(fname)) ghPhotoPending.set(fname, (async () => {
+        const sha = state.gh && state.gh.photos.get(fname.toLowerCase());
+        try {
+          const type = GH_MIME[fname.toLowerCase().split('.').pop()] || '';
+          return sha ? URL.createObjectURL(new Blob([await ghClient(cfg, token).blob(sha)], { type })) : '__missing__';
+        } catch { return '__missing__'; }
+      })().then(u => { photoCache.set(fname, u); ghPhotoPending.delete(fname); return u; }));
+      url = await ghPhotoPending.get(fname);
     }
     el.innerHTML = url === '__missing__'
       ? (isPrimary ? '' : `<div class="missing-photo">${escapeHtml(t('photoMissing', { file: fname }))}</div>`)
       : `<img src="${url}" class="${isPrimary ? 'photo-large' : 'photo-thumb'}">`;
-  }
+  }));
 }
+const ghPhotoPending = new Map();
 
 function ghSettingsModal(){
   const cfg = ghSettings() || {};
