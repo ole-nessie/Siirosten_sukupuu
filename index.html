@@ -631,6 +631,10 @@ const I18N = {
     photoHint:'Tämä sukupuu sisältää kuvaviittauksia. Valitse kuvakansio (esim. "kuvat") niin kuvat näkyvät.',
     photoHintBtn:'Valitse kuvakansio…',
     photoNotSupported:'Kuvakansion valinta vaatii Chrome- tai Edge-selaimen (tai macOS-sovellus).',
+    addPhoto:'Lisää kuva', choosePhoto:'Valitse kuva…', photoUploading:'Tallennetaan kuvaa…',
+    photoAdded:'Kuva {p} tallennettu. Tallenna vielä sukupuu, niin kuva jää henkilölle.',
+    photoNoStore:'Kuvalle ei ole tallennuspaikkaa. Yhdistä GitHub-repo tai valitse ensin kuvakansio.',
+    photoAddFailed:'Kuvan lisäys epäonnistui: {e}',
     spouseDate:'Vihkimispäivä', spousePlace:'Vihkimispaikka',
     chooseSex:'Sukupuoli',
     untitledFile:'Nimetön sukupuu',
@@ -699,6 +703,10 @@ const I18N = {
     photoHint:'This tree references photos. Choose the folder (e.g. "kuvat") and the images will appear.',
     photoHintBtn:'Choose photo folder…',
     photoNotSupported:'Choosing a photo folder requires Chrome or Edge browser (or use the macOS app).',
+    addPhoto:'Add photo', choosePhoto:'Choose photo…', photoUploading:'Saving photo…',
+    photoAdded:'Photo {p} stored. Save the tree too so the photo stays with the person.',
+    photoNoStore:'There is nowhere to store the photo. Connect a GitHub repository or choose a photo folder first.',
+    photoAddFailed:'Adding the photo failed: {e}',
     spouseDate:'Marriage date', spousePlace:'Marriage place',
     chooseSex:'Sex',
     untitledFile:'Untitled family',
@@ -1614,6 +1622,7 @@ function renderEditor(){
     <div>
       ${primaryPhotoHtml}
       <h3>${escapeHtml(state.g.displayName(p))} <span style="color:var(--muted);font-weight:400;font-size:12px">(${escapeHtml(id)})</span></h3>
+      <button id="btn-add-photo" style="margin-top:6px">📷 ${escapeHtml(t('addPhoto'))}</button>
       <div class="row" style="margin-top:8px">
         <div class="field"><label>${escapeHtml(t('givenname'))}</label>
           <input type="text" id="f-given" value="${escapeAttr(state.g.givenname(p))}"></div>
@@ -1691,6 +1700,7 @@ function renderEditor(){
     state.g.setSex(p, e.target.value);
     renderTree();
   });
+  document.getElementById('btn-add-photo').addEventListener('click', () => addPhotoTo(id, null));
   document.getElementById('btn-add-event').addEventListener('click', () => {
     const tag = document.getElementById('f-add-event-type').value;
     pushUndo();
@@ -1734,6 +1744,8 @@ function renderEditor(){
     bindEvField('mediatitle','mediatitle');
     bindEvField('nameGiven','nameGiven');
     bindEvField('nameSurname','nameSurname');
+    const pick = evWrap.querySelector('.photo-pick');
+    if (pick) pick.addEventListener('click', () => addPhotoTo(id, ev));
     const rm = evWrap.querySelector('.event-remove');
     if (rm) rm.addEventListener('click', () => {
       pushUndo();
@@ -1798,7 +1810,8 @@ function renderEvent(ev, idx){
       <div class="field"><label>${escapeHtml(t('eventMediaTitle'))}</label>
         <input type="text" data-field="mediatitle" value="${escapeAttr(ev.mediatitle||'')}"></div>
     </div>
-    <div class="photo-preview" data-file="${escapeAttr(ev.mediafilename||'')}"></div>`;
+    <div class="photo-preview" data-file="${escapeAttr(ev.mediafilename||'')}"></div>
+    <button class="icon-btn photo-pick" style="margin-top:6px">📷 ${escapeHtml(t('choosePhoto'))}</button>`;
   }
   let dateBlock = '';
   if (!isPhoto && !isNote && !isName){
@@ -2230,6 +2243,113 @@ async function pickPhotoFolder(){
     toast(t('photoFolderSet',{p: state.photoDirHandle.name}));
     renderEditor();
   } catch(e){ if (e.name!=='AbortError') console.error(e); }
+}
+
+// ============================================================================
+// ADDING PHOTOS
+// ============================================================================
+// Phone photos are several MB; anything larger than this is scaled down to keep the repo small.
+const PHOTO_MAX_SIDE = 2000;
+const PHOTO_MAX_BYTES = 2500000;
+
+function photoStore(){
+  if (window.electronAPI) return 'electron';
+  if (state.gh) return 'github';
+  if (state.photoDirHandle) return 'folder';
+  return null;
+}
+
+// Must be called straight from a click: mobile browsers only open the picker inside a user gesture.
+function pickImageFile(){
+  return new Promise(resolve => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.style.display = 'none';
+    const done = (f) => { input.remove(); resolve(f); };
+    input.onchange = () => done(input.files[0] || null);
+    input.oncancel = () => done(null);
+    document.body.appendChild(input);
+    input.click();
+  });
+}
+
+async function preparePhoto(file){
+  let ext = (file.name.split('.').pop() || '').toLowerCase();
+  if (ext === 'jpeg') ext = 'jpg';
+  const original = async () => ({ bytes: new Uint8Array(await file.arrayBuffer()), ext });
+  let bmp;
+  try { bmp = await createImageBitmap(file); } catch { return original(); }
+  const scale = Math.min(1, PHOTO_MAX_SIDE / Math.max(bmp.width, bmp.height));
+  if (scale === 1 && file.size <= PHOTO_MAX_BYTES && /^(jpg|png|gif|webp)$/.test(ext)) return original();
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(bmp.width * scale);
+  canvas.height = Math.round(bmp.height * scale);
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(bmp, 0, 0, canvas.width, canvas.height);
+  const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.9));
+  return { bytes: new Uint8Array(await blob.arrayBuffer()), ext: 'jpg' };
+}
+
+function photoBaseName(p, id){
+  const slug = state.g.displayName(p).normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  return slug ? `${slug}_${id}` : id;
+}
+
+async function uniqueName(base, ext, taken){
+  let name = `${base}.${ext}`;
+  for (let n = 2; await taken(name); n++) name = `${base}_${n}.${ext}`;
+  return name;
+}
+
+async function storePhoto(store, base, ext, bytes){
+  if (store === 'electron'){
+    const r = await window.electronAPI.addPhoto({ base, ext, data: bytes });
+    if (r.error) throw new Error(r.error);
+    return r.name;
+  }
+  if (store === 'github'){
+    const cfg = ghSettings(), token = ghToken();
+    if (!cfg || !token) throw new Error(t('ghNeedToken'));
+    const name = await uniqueName(base, ext, n => state.gh.photos.has(n.toLowerCase()));
+    const sha = await ghClient(cfg, token).writeBytes(ghJoin(cfg.photoPath, name), bytes, null, `Sukupuu: lisätty kuva ${name}`);
+    state.gh.photos.set(name.toLowerCase(), sha);
+    return name;
+  }
+  const dir = state.photoDirHandle;
+  if (await dir.requestPermission({ mode: 'readwrite' }) !== 'granted') throw new Error(t('photoNoStore'));
+  const name = await uniqueName(base, ext, n => dir.getFileHandle(n).then(() => true, () => false));
+  const w = await (await dir.getFileHandle(name, { create: true })).createWritable();
+  await w.write(bytes);
+  await w.close();
+  return name;
+}
+
+// ev = existing photo event to put the picture in; null adds a new photo event.
+async function addPhotoTo(personId, ev){
+  const store = photoStore();
+  if (!store){ alert(t('photoNoStore')); return; }
+  const file = await pickImageFile();
+  const p = file && state.g && state.g.persons.get(personId);
+  if (!p) return;
+  toast(t('photoUploading'));
+  let name;
+  try {
+    const { bytes, ext } = await preparePhoto(file);
+    name = await storePhoto(store, photoBaseName(p, personId), ext, bytes);
+  } catch (e){
+    alert(t('photoAddFailed', { e: e.status ? ghErrorText(e) : e.message }));
+    return;
+  }
+  photoCache.delete(name);
+  pushUndo();
+  if (ev) state.g.updateEvent(ev.node, { mediafilename: name });
+  else state.g.addEvent(personId, { tag: 'PHOT', mediafilename: name });
+  render();
+  toast(t('photoAdded', { p: name }));
 }
 
 // ============================================================================
@@ -2672,13 +2792,14 @@ function ghClient(cfg, token){
       catch (e){ if (e.status === 404) return null; throw e; }
     },
     // Passing the previous sha makes GitHub reject the write (409) if the file changed meanwhile.
-    async writeText(path, text, sha, message){
+    async writeBytes(path, bytes, sha, message){
       const r = await json('PUT', `/contents/${ghEnc(path)}`, { body: {
-        message, content: ghBytesToB64(new TextEncoder().encode(text)),
+        message, content: ghBytesToB64(bytes),
         ...(cfg.branch ? { branch: cfg.branch } : {}), ...(sha ? { sha } : {}),
       }});
       return r.content.sha;
     },
+    writeText(path, text, sha, message){ return this.writeBytes(path, new TextEncoder().encode(text), sha, message); },
     async listDir(path){
       try {
         const items = await json('GET', `/contents/${ghEnc(path)}${ref}`);
