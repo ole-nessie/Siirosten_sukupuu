@@ -250,6 +250,7 @@
       <button id="snap-reset" title="Reset to auto-layout / Palauta automaattinen">&#x21BA;</button>
     </div>
     <div class="group" style="position:relative">
+      <button id="btn-home" title="startGo" hidden>⌂</button>
       <input type="search" id="search" placeholder="" style="width:160px">
       <div id="search-results" class="search-results" style="display:none"></div>
     </div>
@@ -649,6 +650,8 @@ const I18N = {
     view:'Näkymä', viewHourglass:'Tiimalasi', viewPedigree:'Sukutaulu', viewDescendant:'Jälkeläiset', viewAll:'Kaikki', viewCard:'Perhe',
     cardEdit:'Muokkaa tietoja', cardSiblings:'Sisarukset', cardOtherChildren:'Muut lapset',
     cardMarried:'Vihitty', bornAbbr:'s.', diedAbbr:'k.',
+    startSet:'Aseta aloitushenkilöksi', startIs:'Aloitushenkilö', startGo:'Siirry aloitushenkilöön',
+    startSaved:'{name} on nyt aloitushenkilö', startFailed:'Aloitushenkilön tallennus epäonnistui: {e}',
     generations:'Sukupolvet', search:'Etsi nimellä…', addPerson:'Lisää henkilö',
     selectPerson:'Valitse henkilö sukupuusta tai aloita lisäämällä uusi.',
     welcomeTitle:'Sukupuu',
@@ -723,6 +726,8 @@ const I18N = {
     view:'View', viewHourglass:'Hourglass', viewPedigree:'Pedigree', viewDescendant:'Descendants', viewAll:'All', viewCard:'Family',
     cardEdit:'Edit details', cardSiblings:'Siblings', cardOtherChildren:'Other children',
     cardMarried:'Married', bornAbbr:'b.', diedAbbr:'d.',
+    startSet:'Set as start person', startIs:'Start person', startGo:'Go to start person',
+    startSaved:'{name} is now the start person', startFailed:'Saving the start person failed: {e}',
     generations:'Generations', search:'Search by name…', addPerson:'Add person',
     selectPerson:'Select a person from the tree, or start by adding one.',
     welcomeTitle:'Family Tree',
@@ -1579,9 +1584,12 @@ function renderCards(){
   const section = (title, body) => `<div class="cv-section"><h4>${escapeHtml(title)}</h4>${body}</div>`;
   const name = (x) => cvGiven(g.displayNameParts(g.persons.get(x)).given);
 
-  const trail = cardTrail.length > 1 ? `<div class="cv-trail">${cardTrail.map((x, i) =>
+  const home = state.startId && !cardTrail.includes(state.startId) && g.persons.has(state.startId)
+    ? `<button data-cv="home" title="${escapeAttr(t('startGo'))}">⌂ ${escapeHtml(name(state.startId))}</button><span>·</span>` : '';
+  const crumbs = cardTrail.length > 1 ? cardTrail.map((x, i) =>
     i === cardTrail.length - 1 ? `<span class="cur">${escapeHtml(name(x))}</span>`
-      : `<button data-id="${escapeAttr(x)}">${escapeHtml(name(x))}</button><span>›</span>`).join('')}</div>` : '';
+      : `<button data-id="${escapeAttr(x)}">${escapeHtml(name(x))}</button><span>›</span>`).join('') : '';
+  const trail = home || crumbs ? `<div class="cv-trail">${home}${crumbs}</div>` : '';
 
   const parentCards = parents.map(pid => cvCard(pid, up(pid)));
   if (parentCards.length < 2) parentCards.push(`<button class="cv-add" data-cv="add-parent">+ ${escapeHtml(t('addParent'))}</button>`);
@@ -1611,6 +1619,7 @@ function renderCards(){
       <div class="cv-actions">
         <button class="primary" data-cv="edit">${escapeHtml(t('cardEdit'))}</button>
         <button data-cv="photo">📷 ${escapeHtml(t('addPhoto'))}</button>
+        ${startButtonHtml(id, 'data-cv="start"')}
       </div>
     </div>
     ${siblings.length ? section(`${t('cardSiblings')} (${siblings.length})`, `<div class="cv-chips">${siblings.map(s => cvCard(s)).join('')}</div>`) : ''}
@@ -1629,6 +1638,8 @@ function setupCardView(){
       const a = act.dataset.cv;
       if (a === 'edit'){ renderEditor(); loadPhotos(); showMobileSheet(); }
       else if (a === 'photo') addPhotoTo(state.focusId, null);
+      else if (a === 'start') setStartPerson(state.focusId);
+      else if (a === 'home') goToStart();
       else handleAddRelation(a, state.focusId, act);
       return;
     }
@@ -1638,6 +1649,81 @@ function setupCardView(){
     render();
     box.scrollTop = 0;
   });
+}
+
+// ============================================================================
+// START PERSON: the person the views open at
+// ============================================================================
+// GitHub trees keep it in <tree>.sukupuu.json next to the XML so every device shares it and the
+// XML stays a plain genealog export; local files remember it in this browser.
+const startLocalKey = () => 'sukupuu-start:' + state.filename;
+const ghStartPath = (p) => p.replace(/\.xml$/i, '') + '.sukupuu.json';
+
+async function readStartPerson(){
+  if (window.electronAPI) return await window.electronAPI.getStartPerson();
+  if (!state.gh) return localStorage.getItem(startLocalKey());
+  const cfg = ghSettings(), token = ghToken();
+  try {
+    const { text, sha } = await ghClient(cfg, token).readText(ghStartPath(cfg.path));
+    state.gh.settingsSha = sha;
+    return JSON.parse(text).startPerson || null;
+  } catch (e){
+    if (e.status === 404) return null;
+    throw e;
+  }
+}
+
+async function writeStartPerson(id){
+  if (window.electronAPI){
+    const r = await window.electronAPI.setStartPerson(id);
+    if (r.error) throw new Error(r.error);
+    return;
+  }
+  if (!state.gh){ localStorage.setItem(startLocalKey(), id); return; }
+  const cfg = ghSettings(), token = ghToken();
+  if (!cfg || !token) throw new Error(t('ghNeedToken'));
+  const c = ghClient(cfg, token), path = ghStartPath(cfg.path);
+  const text = JSON.stringify({ startPerson: id }, null, 2) + '\n';
+  const message = `Sukupuu: aloitushenkilö ${id}`;
+  try { state.gh.settingsSha = await c.writeText(path, text, state.gh.settingsSha, message); }
+  catch (e){
+    if (e.status !== 409 && e.status !== 422) throw e;
+    state.gh.settingsSha = await c.writeText(path, text, await c.fileSha(path), message);
+  }
+}
+
+// Jumps to the start person once it is known, unless the user has already moved on.
+async function applyStartPerson(){
+  const g = state.g, first = state.focusId;
+  let id = null;
+  try { id = await readStartPerson(); } catch (e){ console.warn('Start person not loaded', e); }
+  if (state.g !== g || !id || !g.persons.has(id)) return;
+  state.startId = id;
+  if (state.focusId === first){ state.focusId = id; cardTrail = []; }
+  state._needsFit = true;
+  render();
+}
+
+async function setStartPerson(id){
+  const p = state.g && state.g.persons.get(id);
+  if (!p) return;
+  try { await writeStartPerson(id); }
+  catch (e){ alert(t('startFailed', { e: e.status ? ghErrorText(e) : e.message })); return; }
+  state.startId = id;
+  render();
+  toast(t('startSaved', { name: cvGiven(state.g.displayNameParts(p).given) }));
+}
+
+function goToStart(){
+  if (!state.startId || !state.g || !state.g.persons.has(state.startId)) return;
+  state.focusId = state.startId;
+  state._needsFit = true;
+  render();
+}
+
+function startButtonHtml(id, attr){
+  const isStart = id === state.startId;
+  return `<button ${attr} ${isStart ? 'disabled' : ''}>${isStart ? '★ ' + escapeHtml(t('startIs')) : '☆ ' + escapeHtml(t('startSet'))}</button>`;
 }
 
 function isMobile(){ return window.matchMedia('(max-width:768px)').matches; }
@@ -1802,7 +1888,10 @@ function renderEditor(){
     <div>
       ${primaryPhotoHtml}
       <h3>${escapeHtml(state.g.displayName(p))} <span style="color:var(--muted);font-weight:400;font-size:12px">(${escapeHtml(id)})</span></h3>
-      <button id="btn-add-photo" style="margin-top:6px">📷 ${escapeHtml(t('addPhoto'))}</button>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
+        <button id="btn-add-photo">📷 ${escapeHtml(t('addPhoto'))}</button>
+        ${startButtonHtml(id, 'id="btn-set-start"')}
+      </div>
       <div class="row" style="margin-top:8px">
         <div class="field"><label>${escapeHtml(t('givenname'))}</label>
           <input type="text" id="f-given" value="${escapeAttr(state.g.givenname(p))}"></div>
@@ -1881,6 +1970,7 @@ function renderEditor(){
     renderTree();
   });
   document.getElementById('btn-add-photo').addEventListener('click', () => addPhotoTo(id, null));
+  document.getElementById('btn-set-start').addEventListener('click', () => setStartPerson(id));
   document.getElementById('btn-add-event').addEventListener('click', () => {
     const tag = document.getElementById('f-add-event-type').value;
     pushUndo();
@@ -2286,7 +2376,10 @@ function loadXml(text, name, gh = null){
     state._needsFit = true;
     state.savedSnapshot = snapshot();
     state.dirty = false;
+    state.startId = null;
+    cardTrail = [];
     render();
+    applyStartPerson();
     toast(t('fileLoaded'));
     sessionStorage.removeItem('photoHintDismissed');
     setTimeout(maybeShowPhotoHint, 300);
@@ -2560,6 +2653,7 @@ function render(){
   renderTree();
   renderEditor();
   renderStatus();
+  document.getElementById('btn-home').hidden = !state.startId || state.startId === state.focusId;
   updateUndoButtons();
   setDirty();
   // Photos load async after editor render
@@ -2589,6 +2683,7 @@ function bindToolbar(){
     });
   });
   document.getElementById('btn-view-card').addEventListener('click',      () => setView('card'));
+  document.getElementById('btn-home').addEventListener('click', goToStart);
   document.getElementById('btn-view-hourglass').addEventListener('click', () => setView('hourglass'));
   document.getElementById('btn-view-pedigree').addEventListener('click',  () => setView('pedigree'));
   document.getElementById('btn-view-desc').addEventListener('click',      () => setView('descendant'));
